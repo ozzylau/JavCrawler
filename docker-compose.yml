@@ -4,6 +4,8 @@ services:
     image: javcrawler:latest
     container_name: javcrawler
     network_mode: host
+    environment:
+      - TZ=Asia/Shanghai     # 定时任务按本地时间触发
     volumes:
       - /mnt/data:/mnt/data
       - ./config.json:/app/config.json
