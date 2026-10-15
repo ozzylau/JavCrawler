@@ -1,0 +1,11 @@
+{
+  "input_directories": [],
+  "javdb_cookie": "",
+  "proxy": "",
+  "auto_schedule": {
+    "enabled": false,
+    "mode": "daily",
+    "daily_time": "03:00",
+    "interval_hours": 8
+  }
+}

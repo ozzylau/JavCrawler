@@ -1,0 +1,11 @@
+services:
+  javcrawler:
+    build: .
+    image: javcrawler:latest
+    container_name: javcrawler
+    network_mode: host
+    volumes:
+      - /mnt/data:/mnt/data
+      - ./config.json:/app/config.json
+      - ./data:/app/data        # 刮削状态 + 按日期历史日志
+    restart: unless-stopped
