@@ -39,6 +39,22 @@
 
 ## 🚀 快速开始（Docker）
 
+**方式一：直接拉取镜像（推荐）**
+
+```bash
+mkdir javcrawler && cd javcrawler
+docker run -d --name javcrawler --network host \
+  -v /mnt/data:/mnt/data \
+  -v ./config.json:/app/config.json \
+  -v ./data:/app/data \
+  --restart unless-stopped \
+  ozzylau/javcrawler:latest
+```
+
+先创建一个 `config.json`（可以只写 `{}`，之后全部在网页里配置）。
+
+**方式二：从源码构建**
+
 ```bash
 git clone https://github.com/<你的用户名>/JavCrawler.git
 cd JavCrawler
