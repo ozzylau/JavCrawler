@@ -39,21 +39,90 @@
 
 ## 🚀 快速开始（Docker）
 
-**方式一：直接拉取镜像（推荐）**
+镜像已发布到 Docker Hub：[`ozzylau/javcrawler`](https://hub.docker.com/r/ozzylau/javcrawler)，无需克隆源码，任意带 Docker 功能的设备（服务器 / NAS / 路由器）都能直接拉取部署。
+
+### 方式一：Linux 服务器 / 任意终端一条命令部署（推荐）
+
+先准备目录和空配置文件（容器启动时会自动补全默认值）：
 
 ```bash
-mkdir javcrawler && cd javcrawler
+mkdir -p javcrawler/data && cd javcrawler
+echo '{}' > config.json
+```
+
+> ⚠️ 必须先创建 `config.json` 文件再启动容器——如果挂载一个不存在的文件路径，Docker 会把它创建成**目录**，导致容器启动失败。
+
+启动容器：
+
+```bash
 docker run -d --name javcrawler --network host \
   -v /mnt/data:/mnt/data \
-  -v ./config.json:/app/config.json \
-  -v ./data:/app/data \
+  -v $(pwd)/config.json:/app/config.json \
+  -v $(pwd)/data:/app/data \
   --restart unless-stopped \
   ozzylau/javcrawler:latest
 ```
 
-先创建一个 `config.json`（可以只写 `{}`，之后全部在网页里配置）。
+- `/mnt/data:/mnt/data` — 把存放视频的磁盘挂进容器（左边改成你自己的实际路径，左右写一样的路径最省心）
+- 打开后台：`http://设备IP:8100`
 
-**方式二：从源码构建**
+### 方式二：NAS 部署（群晖 / 威联通 / fnOS 等）
+
+**群晖 DSM 7（Container Manager）：**
+
+1. **File Station** 先建目录：`docker/javcrawler/`，在其中新建一个空文件 `config.json`（内容 `{}`）和一个 `data` 文件夹
+2. 打开 **Container Manager → 注册表**，搜索 `ozzylau/javcrawler`，下载 `latest`
+3. **映像 → 启动**，创建容器时配置：
+   - 端口：本地端口 `8100` → 容器端口 `8100`
+   - 存储空间（添加 3 个文件夹映射）：
+     | 宿主机（NAS） | 容器 |
+     |---|---|
+     | `docker/javcrawler/config.json` | `/app/config.json` |
+     | `docker/javcrawler/data` | `/app/data` |
+     | 你的视频目录，如 `/volume1/media/movies` | `/volume1/media/movies`（两边写一样） |
+   - （可选）环境变量不用配，进网页再设代理
+4. 启动后访问 `http://NAS的IP:8100`
+
+**威联通 / 其他 NAS（Container Station）：** 同样思路——建目录、拉镜像、映射端口 `8100` 和上面 3 个存储路径即可。支持 YAML 的 NAS 也可以直接用下面的 compose：
+
+```yaml
+services:
+  javcrawler:
+    image: ozzylau/javcrawler:latest
+    container_name: javcrawler
+    network_mode: host          # 不支持 host 模式就删掉这行，改为 ports: ["8100:8100"]
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/app/config.json
+      - ./data:/app/data
+      - /your/media/path:/your/media/path   # 左右两边写一样的路径
+```
+
+> 💡 建议用 `network_mode: host`（或把两边端口都设为 8100），这样网页里「浏览选择目录」看到的路径和挂载路径一致，最直观。
+
+### 方式三：路由器部署（OpenWrt / 梅林固件等带 Docker 的）
+
+路由器方案适合**媒体库就跑在路由器旁边**的场景（视频一般挂在 USB 硬盘上）：
+
+1. 确认路由器 Docker 可用且 USB 硬盘已挂载（如 `/mnt/sda1`）
+2. SSH 进路由器，先建配置（务必先建 `config.json` 文件）：
+
+```bash
+mkdir -p /mnt/sda1/javcrawler/data
+echo '{}' > /mnt/sda1/javcrawler/config.json
+docker run -d --name javcrawler --network host \
+  -v /mnt/sda1/javcrawler/config.json:/app/config.json \
+  -v /mnt/sda1/javcrawler/data:/app/data \
+  -v /mnt/sda1/media:/mnt/sda1/media \
+  --restart unless-stopped \
+  ozzylau/javcrawler:latest
+```
+
+3. 访问 `http://路由器IP:8100`，刮削目录填容器内路径（如 `/mnt/sda1/media`）
+
+> ⚠️ 路由器提示：刮削只做「下载网页 + 存几个小文件」，占用不大，但**路由器必须能访问 javdb**（被墙时需在网页里配置代理，指向局域网内任意可用代理）；CPU 过弱的软路由拉取镜像和建容器会慢一些，属正常现象。
+
+### 方式四：从源码构建
 
 ```bash
 git clone https://github.com/<你的用户名>/JavCrawler.git
@@ -61,16 +130,14 @@ cd JavCrawler
 docker compose up -d --build
 ```
 
-打开后台：`http://服务器IP:8100`
-
-默认 `docker-compose.yml` 把宿主机 `/mnt/data` 挂载到容器同路径。媒体文件在别的目录就修改 `volumes` 一行：
+默认 `docker-compose.yml` 把宿主机 `/mnt/data` 挂载到容器同路径（8100 端口）。媒体文件在别的目录就修改 `volumes` 一行：
 
 ```yaml
 volumes:
   - /volume1/media:/volume1/media     # 左边=宿主机路径，右边=容器内路径
 ```
 
-**要点：挂载后的「容器内路径」就是网页里填写的刮削目录。**
+**要点：挂载后的「容器内路径」就是网页里填写的刮削目录**——建议左右两边写一样的路径，网页里「浏览选择目录」所见即所得。
 
 ## ⚙️ 配置（网页操作）
 
