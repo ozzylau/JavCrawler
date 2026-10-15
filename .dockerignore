@@ -1,0 +1,13 @@
+# 防止本地开发文件与隐私信息进入 Docker 构建上下文
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+README.md
+LICENSE
+data/
+*.md
+.DS_Store
+__pycache__/
+*.pyc
