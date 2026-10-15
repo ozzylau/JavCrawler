@@ -112,8 +112,13 @@ class JavdbScraper:
         tree = lxml_html.fromstring(r.content.decode("utf-8", "ignore"))
         data = {"url": full}
 
-        t = tree.xpath("//h2/strong[@class='current-title']/text()")
-        data["title"] = t[0].strip() if t else ""
+        # 标题：优先原始标题（javdb 的中文是 AI 翻译，质量差），无翻译时退回主标题
+        origin = tree.xpath("//h2/span[contains(@class,'origin-title')]/text()")
+        if origin and origin[0].strip():
+            data["title"] = origin[0].strip()
+        else:
+            t = tree.xpath("//h2/strong[@class='current-title']/text()")
+            data["title"] = t[0].strip() if t else ""
         c = tree.xpath("//img[@class='video-cover']/@src")
         data["fanart"] = c[0] if c else ""  # 主封面（横版，DVD 盒展开图）→ fanart
         # 预览大图列表（_l_ 原图；其中可能是竖版海报或横版截图）
