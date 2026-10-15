@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JavCrawler 后台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f1115; color: #e6e6e6; padding: 24px; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; color: #fff; }
+  .sub { color: #8a93a5; font-size: 13px; margin-bottom: 20px; }
+  .card { background: #1a1e26; border: 1px solid #2a3040; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; color: #ffb454; margin-bottom: 14px; }
+  label { display: block; font-size: 13px; color: #aab2c0; margin-bottom: 5px; }
+  input, select { width: 100%; background: #0f1115; border: 1px solid #2a3040; color: #e6e6e6; border-radius: 6px; padding: 9px 11px; font-size: 13px; margin-bottom: 12px; }
+  input:focus, select:focus { border-color: #ffb454; outline: none; }
+  .hint { font-size: 12px; color: #6b7280; margin-top: -8px; margin-bottom: 12px; }
+  button { background: #ffb454; color: #1a1e26; border: 0; border-radius: 6px; padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #ffc46e; }
+  button.secondary { background: #2a3040; color: #e6e6e6; font-weight: 400; }
+  button.secondary:hover { background: #333a4d; }
+  button.danger { background: #6e2a2a; color: #ffb4b4; font-weight: 400; }
+  button.danger:hover { background: #8a3333; }
+  button.small { padding: 5px 10px; font-size: 12px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  /* 统计卡片 */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stat { background: #0f1115; border: 1px solid #2a3040; border-radius: 8px; padding: 14px; text-align: center; }
+  .stat .num { font-size: 26px; font-weight: 700; }
+  .stat .lbl { font-size: 12px; color: #8a93a5; margin-top: 4px; }
+  .num.c-total { color: #e6e6e6; } .num.c-ok { color: #3fb950; } .num.c-pending { color: #5b9cff; } .num.c-fail { color: #f85149; }
+  .stat.clickable { cursor: pointer; transition: border-color .15s; }
+  .stat.clickable:hover { border-color: #ffb454; }
+  /* 明细弹窗 */
+  #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 50; align-items: flex-start; justify-content: center; padding: 60px 20px; }
+  #modalBox { background: #1a1e26; border: 1px solid #2a3040; border-radius: 10px; width: 100%; max-width: 820px; max-height: 80vh; display: flex; flex-direction: column; }
+  #modalHead { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid #2a3040; }
+  #modalHead h3 { font-size: 15px; color: #ffb454; }
+  #modalHead .x { margin-left: auto; cursor: pointer; color: #8a93a5; font-size: 18px; padding: 0 6px; }
+  #modalHead .x:hover { color: #f85149; }
+  #modalBody { overflow-y: auto; padding: 10px 18px 18px; }
+  #modalBody h4 { font-size: 12px; color: #8a93a5; font-family: Menlo, Consolas, monospace; margin: 12px 0 4px; word-break: break-all; }
+  #modalBody td.st-scraped { color: #3fb950; } #modalBody td.st-pending { color: #5b9cff; } #modalBody td.st-failed { color: #f85149; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #22283a; word-break: break-all; }
+  th { color: #8a93a5; font-weight: 500; }
+  /* 目录列表 */
+  .dirlist { margin-bottom: 10px; }
+  .diritem { display: flex; align-items: center; gap: 8px; background: #0f1115; border: 1px solid #2a3040; border-radius: 6px; padding: 7px 10px; margin-bottom: 6px; font-size: 13px; font-family: Menlo, Consolas, monospace; }
+  .diritem .x { margin-left: auto; cursor: pointer; color: #f85149; font-weight: 700; padding: 0 4px; }
+  .diritem .exists-warn { color: #f85149; font-size: 11px; margin-left: 6px; }
+  /* 浏览器 */
+  #browseBox { display: none; background: #0f1115; border: 1px solid #2a3040; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  #browsePath { font-family: Menlo, Consolas, monospace; font-size: 12px; color: #ffb454; margin-bottom: 8px; word-break: break-all; }
+  #browseList { max-height: 200px; overflow-y: auto; margin-bottom: 8px; }
+  #browseList div { padding: 6px 8px; cursor: pointer; border-radius: 4px; font-size: 13px; }
+  #browseList div:hover { background: #1a1e26; }
+  /* 日志 */
+  .log { background: #0a0c10; border: 1px solid #22283a; border-radius: 6px; padding: 12px; font-family: Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 340px; overflow-y: auto; color: #a9c9a9; }
+  .log.historical { color: #9aa7c9; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; }
+  .badge.idle { background: #2a3040; color: #aab2c0; }
+  .badge.run { background: #1f6feb33; color: #5b9cff; }
+  .badge.done { background: #23863633; color: #3fb950; }
+  #result, #cleanMsg { margin-top: 10px; font-size: 13px; }
+  .progressbar { height: 8px; background: #0f1115; border-radius: 4px; overflow: hidden; margin-top: 10px; display: none; }
+  .progressbar > div { height: 100%; background: #ffb454; width: 0; transition: width .5s; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 13px; color: #f85149; }
+  .field2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .checkbox { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; font-size: 13px; color: #aab2c0; }
+  .checkbox input { width: auto; margin: 0; }
+  .hint code { background: #0f1115; border: 1px solid #2a3040; border-radius: 4px; padding: 1px 5px; font-family: Menlo, Consolas, monospace; font-size: 11px; color: #d8b26e; }
+  .hint .codeblock { background: #0a0c10; border: 1px solid #2a3040; border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-family: Menlo, Consolas, monospace; font-size: 11.5px; color: #9ece6a; white-space: pre; overflow-x: auto; }
+  .pw-wrap { position: relative; }
+  .pw-wrap input { padding-right: 36px; }
+  .pw-wrap .eye { position: absolute; right: 10px; top: 8px; cursor: pointer; color: #8a93a5; font-size: 14px; user-select: none; line-height: 1; }
+  .pw-wrap .eye:hover { color: #ffb454; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>JavCrawler</h1>
+  <div class="sub">使用JAVDB刮削小姐姐电影，兼容Infuse、Kodi、Emby、Jellyfin等播放器</div>
+
+  <div class="card">
+    <h2>📊 刮削状态</h2>
+    <div class="stats">
+      <div class="stat clickable" onclick="showMovies('all')"><div class="num c-total" id="stTotal">-</div><div class="lbl">已识别影片</div></div>
+      <div class="stat clickable" onclick="showMovies('scraped')"><div class="num c-ok" id="stOk">-</div><div class="lbl">已刮削</div></div>
+      <div class="stat clickable" onclick="showMovies('pending')"><div class="num c-pending" id="stPending">-</div><div class="lbl">未刮削</div></div>
+      <div class="stat clickable" onclick="showMovies('failed')"><div class="num c-fail" id="stFail">-</div><div class="lbl">刮削失败</div></div>
+    </div>
+    <table id="dirStats"><thead><tr><th>目录</th><th>总数</th><th>已刮削</th><th>未刮削</th><th>失败</th></tr></thead><tbody></tbody></table>
+    <details id="failedBox" style="display:none">
+      <summary>查看失败明细</summary>
+      <table id="failedTable"><thead><tr><th>番号</th><th>文件</th><th>原因</th></tr></thead><tbody></tbody></table>
+    </details>
+    <div class="hint" style="margin-top:10px">提示：点击上方卡片可查看该状态下各目录与影片文件明细</div>
+  </div>
+
+  <div class="card">
+    <h2>📁 刮削目录（可添加多个）</h2>
+    <div id="dirList" class="dirlist"></div>
+    <div class="row">
+      <input id="newDir" style="flex:1; margin-bottom:0; font-family:Menlo,Consolas,monospace;" placeholder="输入容器内路径，如 /mnt/data/Movie/AV">
+      <button class="secondary" onclick="toggleBrowse()">📂 浏览</button>
+      <button onclick="addDir()">＋ 添加</button>
+    </div>
+    <div id="browseBox">
+      <div id="browsePath"></div>
+      <div id="browseList"></div>
+      <div class="row">
+        <button class="secondary small" onclick="browseGoto('__parent__')">⬆ 上级</button>
+        <button class="small" onclick="pickBrowse()">✔ 选定此目录</button>
+        <button class="secondary small" onclick="toggleBrowse()">关闭</button>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:10px">
+      目录是「容器内」路径。如果浏览或输入宿主机磁盘路径后提示不存在，说明该磁盘没有挂载进容器，需要在服务器的
+      <code>docker-compose.yml</code> 的 <code>volumes:</code> 段添加一行挂载，例如宿主机磁盘在 <code>/mnt/data</code>：
+      <div class="codeblock">volumes:
+  - /mnt/data:/mnt/data   # 左边是宿主机路径，右边是容器内路径（刮削目录填右边）</div>
+      保存后执行 <code>docker compose up -d</code> 重建容器生效，然后这里就能选到该目录了。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>⚙️ 数据源设置</h2>
+    <div class="checkbox"><input type="checkbox" id="useCnTitle"><span>刮削电影中文名（如有）— 开启后 NFO 的 title 用 javdb 中文翻译，originaltitle 保留原始标题；关闭时 title 直接用原始标题（默认关闭，javdb 的 AI 翻译质量一般）</span></div>
+    <label>javdb Cookie（可选 — 正常情况无需填写；只有被反爬拦截(403/503)时才需要）</label>
+    <input id="javdb_cookie" placeholder="留空即可；如需填写：浏览器登录 javdb.com → F12 → 网络请求头复制整段 Cookie">
+    <label>HTTP 代理（可选 — 填写代理服务器地址；服务器能直连 javdb 就留空）</label>
+    <div class="field2">
+      <div>
+        <label style="font-size:12px">IP 地址 或 域名</label>
+        <input id="px_host" placeholder="例如 192.168.100.2" style="margin-bottom:8px">
+      </div>
+      <div>
+        <label style="font-size:12px">端口</label>
+        <input id="px_port" placeholder="例如 7890" style="margin-bottom:8px">
+      </div>
+      <div>
+        <label style="font-size:12px">用户名（没有就留空）</label>
+        <input id="px_user" placeholder="可留空" autocomplete="off" style="margin-bottom:8px">
+      </div>
+      <div>
+        <label style="font-size:12px">密码（没有就留空）</label>
+        <div class="pw-wrap">
+          <input id="px_pass" type="password" placeholder="可留空" autocomplete="new-password" style="margin-bottom:8px">
+          <span class="eye" id="px_eye" onclick="togglePw()" title="显示/隐藏密码">👁</span>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <button onclick="saveCfg()">💾 保存配置</button>
+      <button class="secondary" onclick="loadCfg()">刷新</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>⏰ 定时自动刮削</h2>
+    <div class="checkbox"><input type="checkbox" id="schEnabled"><span>启用定时自动检查（对未刮削/刮削失败的影片自动补刮）</span></div>
+    <div class="field2">
+      <div>
+        <label>模式</label>
+        <select id="schMode" onchange="schModeChange()">
+          <option value="daily">每天固定时间</option>
+          <option value="interval">每 N 小时</option>
+        </select>
+      </div>
+      <div id="schDailyBox">
+        <label>每天几点执行</label>
+        <input type="time" id="schDailyTime" value="03:00">
+      </div>
+      <div id="schIntervalBox" style="display:none">
+        <label>执行频率</label>
+        <select id="schIntervalHours">
+          <option value="8">每 8 小时（0:00 / 8:00 / 16:00）</option>
+          <option value="4">每 4 小时（0:00 / 4:00 / 8:00 / 12:00 / 16:00 / 20:00）</option>
+        </select>
+      </div>
+    </div>
+    <div class="field2">
+      <div>
+        <label>时区（定时任务与日志按此时区）</label>
+        <select id="tzSelect">
+          <option value="Asia/Shanghai">Asia/Shanghai — 中国标准时间（默认）</option>
+          <option value="Asia/Hong_Kong">Asia/Hong_Kong — 香港</option>
+          <option value="Asia/Taipei">Asia/Taipei — 台北</option>
+          <option value="Asia/Tokyo">Asia/Tokyo — 日本</option>
+          <option value="Asia/Singapore">Asia/Singapore — 新加坡</option>
+          <option value="Asia/Bangkok">Asia/Bangkok — 曼谷</option>
+          <option value="Asia/Seoul">Asia/Seoul — 首尔</option>
+          <option value="UTC">UTC</option>
+          <option value="Europe/London">Europe/London — 伦敦</option>
+          <option value="Europe/Berlin">Europe/Berlin — 柏林</option>
+          <option value="America/New_York">America/New_York — 纽约</option>
+          <option value="America/Los_Angeles">America/Los_Angeles — 洛杉矶</option>
+          <option value="Australia/Sydney">Australia/Sydney — 悉尼</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint" id="schHint"></div>
+    <div class="hint">上方时间按所选时区触发；保存后立即生效，无需重启容器</div>
+    <button onclick="saveSchedule()">💾 保存定时设置</button>
+  </div>
+
+  <div class="card">
+    <h2>🚀 手动刮削</h2>
+    <div class="row">
+      <button onclick="startScrape()">▶ 开始检查刮削</button>
+      <button class="danger" onclick="forceRescrape()">🔁 强制重刮全部</button>
+      <button class="secondary" onclick="cancelScrape()">⏹ 取消</button>
+      <span id="badge" class="badge idle">空闲</span>
+    </div>
+    <div class="hint" style="margin-top:10px">「开始检查刮削」只处理未刮削和失败的影片；「强制重刮全部」无视状态重新刮削所有影片（用于切换标题语言、更新最新海报/评分等）</div>
+    <div class="progressbar" id="pbar"><div id="pfill"></div></div>
+    <div id="result"></div>
+    <div style="margin-top:14px;"><label>本次运行日志</label>
+      <div id="log" class="log">暂无日志</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📜 历史日志（按日期）</h2>
+    <div class="row" style="margin-bottom:10px;">
+      <select id="logDate" style="flex:1; margin-bottom:0;" onchange="loadHistoryLog()"><option value="">加载日期中…</option></select>
+      <button class="secondary" onclick="refreshLogDates()">刷新</button>
+      <button class="danger" onclick="cleanLogs()">🧹 删除 7 天前日志</button>
+      <button class="danger" onclick="cleanAllLogs()">🗑 删除所有日志</button>
+    </div>
+    <div id="cleanMsg"></div>
+    <div id="historyLog" class="log historical">选择日期查看历史日志</div>
+  </div>
+</div>
+
+<div id="modal" onclick="if(event.target===this) hideModal()">
+  <div id="modalBox">
+    <div id="modalHead"><h3 id="modalTitle">明细</h3><span class="x" onclick="hideModal()">✕</span></div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+let cfgDirs = [];
+let browsePath = '/';
+
+/* ---------- 统计 ---------- */
+async function loadStats() {
+  try {
+    const r = await fetch('/api/stats');
+    const s = await r.json();
+    document.getElementById('stTotal').textContent = s.total;
+    document.getElementById('stOk').textContent = s.scraped;
+    document.getElementById('stPending').textContent = s.pending;
+    document.getElementById('stFail').textContent = s.failed;
+    const tb = document.querySelector('#dirStats tbody');
+    tb.innerHTML = (s.dirs || []).map(d =>
+      `<tr><td>${esc(d.dir)}${d.exists ? '' : '<span class="exists-warn">（容器内不存在）</span>'}</td><td>${d.total}</td><td>${d.scraped}</td><td>${d.pending}</td><td>${d.failed}</td></tr>`
+    ).join('') || '<tr><td colspan="5" style="color:#6b7280">尚未配置目录</td></tr>';
+    const box = document.getElementById('failedBox');
+    const ftb = document.querySelector('#failedTable tbody');
+    if ((s.failed_list || []).length) {
+      box.style.display = '';
+      ftb.innerHTML = s.failed_list.map(f =>
+        `<tr><td>${esc(f.dvdid)}</td><td>${esc(f.file.split('/').pop())}</td><td style="color:#f85149">${esc(f.error || '')}</td></tr>`).join('');
+    } else { box.style.display = 'none'; }
+  } catch (e) {}
+}
+
+/* ---------- 配置 ---------- */
+async function loadCfg() {
+  const r = await fetch('/api/config');
+  const c = await r.json();
+  cfgDirs = c.input_directories || [];
+  document.getElementById('javdb_cookie').value = c.javdb_cookie || '';
+  document.getElementById('useCnTitle').checked = !!c.use_chinese_title;
+  fillProxy(c.proxy || '');
+  const sch = c.auto_schedule || {};
+  document.getElementById('schEnabled').checked = !!sch.enabled;
+  document.getElementById('schMode').value = sch.mode || 'daily';
+  document.getElementById('schDailyTime').value = sch.daily_time || '03:00';
+  document.getElementById('schIntervalHours').value = (parseInt(sch.interval_hours) === 4) ? '4' : '8';
+  const tzSel = document.getElementById('tzSelect');
+  tzSel.value = c.timezone || 'Asia/Shanghai';
+  if (!tzSel.value) tzSel.value = 'Asia/Shanghai';
+  schModeChange(); renderDirs();
+}
+function renderDirs() {
+  const el = document.getElementById('dirList');
+  el.innerHTML = cfgDirs.map((d, i) =>
+    `<div class="diritem"><span>📁 ${esc(d)}</span><span class="x" onclick="removeDir(${i})">✕</span></div>`).join('')
+    || '<div class="hint">尚未添加目录</div>';
+}
+function addDir() {
+  const v = document.getElementById('newDir').value.trim();
+  if (!v) return;
+  if (!cfgDirs.includes(v)) cfgDirs.push(v);
+  document.getElementById('newDir').value = '';
+  renderDirs(); saveCfg(true);
+}
+function removeDir(i) {
+  cfgDirs.splice(i, 1);
+  renderDirs(); saveCfg(true);
+}
+async function saveCfg(silent) {
+  const payload = {
+    input_directories: cfgDirs,
+    javdb_cookie: document.getElementById('javdb_cookie').value,
+    use_chinese_title: document.getElementById('useCnTitle').checked,
+    proxy: buildProxy()
+  };
+  await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  if (!silent) alert('配置已保存');
+  await loadStats();
+}
+
+/* ---------- 代理字段 <-> URL 互转 ---------- */
+function buildProxy() {
+  const host = document.getElementById('px_host').value.trim();
+  if (!host) return '';
+  const port = document.getElementById('px_port').value.trim();
+  const user = document.getElementById('px_user').value.trim();
+  const pass = document.getElementById('px_pass').value;
+  let auth = '';
+  if (user) {
+    auth = encodeURIComponent(user);
+    if (pass) auth += ':' + encodeURIComponent(pass);
+    auth += '@';
+  }
+  return 'http://' + auth + host + (port ? ':' + port : '');
+}
+function fillProxy(url) {
+  // 解析 http://[user[:pass]@]host[:port]
+  let host = '', port = '', user = '', pass = '';
+  let rest = url.replace(/^https?:\/\//, '');
+  if (rest.includes('@')) {
+    const at = rest.indexOf('@');
+    const auth = rest.slice(0, at);
+    rest = rest.slice(at + 1);
+    const ci = auth.indexOf(':');
+    if (ci >= 0) { user = safeDecode(auth.slice(0, ci)); pass = safeDecode(auth.slice(ci + 1)); }
+    else { user = safeDecode(auth); }
+  }
+  const pi = rest.lastIndexOf(':');
+  if (pi >= 0 && /^\d+$/.test(rest.slice(pi + 1))) { host = rest.slice(0, pi); port = rest.slice(pi + 1); }
+  else { host = rest; }
+  document.getElementById('px_host').value = host;
+  document.getElementById('px_port').value = port;
+  document.getElementById('px_user').value = user;
+  document.getElementById('px_pass').value = pass;
+}
+function safeDecode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
+
+function togglePw() {
+  const inp = document.getElementById('px_pass');
+  const eye = document.getElementById('px_eye');
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  eye.textContent = show ? '🙈' : '👁';
+}
+
+/* ---------- 目录浏览 ---------- */
+function toggleBrowse() {
+  const b = document.getElementById('browseBox');
+  if (b.style.display === 'block') { b.style.display = 'none'; return; }
+  b.style.display = 'block';
+  browseGoto(document.getElementById('newDir').value.trim() || '/');
+}
+async function browseGoto(p) {
+  if (p === '__parent__') p = browseParent || '/';
+  const r = await fetch('/api/browse?path=' + encodeURIComponent(p));
+  const j = await r.json();
+  browsePath = j.path || p; browseParent = j.parent;
+  document.getElementById('browsePath').textContent = '当前: ' + browsePath;
+  document.getElementById('browseList').innerHTML =
+    (j.dirs || []).map(n => `<div onclick="browseGoto('${browsePath === '/' ? '' : browsePath}/${esc(n).replace(/'/g, "\\'")}')">📁 ${esc(n)}</div>`).join('')
+    || '<div style="color:#6b7280;padding:6px">无子目录</div>';
+}
+function pickBrowse() { document.getElementById('newDir').value = browsePath; document.getElementById('browseBox').style.display = 'none'; }
+
+/* ---------- 定时 ---------- */
+function schModeChange() {
+  const mode = document.getElementById('schMode').value;
+  document.getElementById('schDailyBox').style.display = mode === 'daily' ? '' : 'none';
+  document.getElementById('schIntervalBox').style.display = mode === 'interval' ? '' : 'none';
+  updateSchHint();
+}
+async function saveSchedule() {
+  const payload = {
+    auto_schedule: {
+      enabled: document.getElementById('schEnabled').checked,
+      mode: document.getElementById('schMode').value,
+      daily_time: document.getElementById('schDailyTime').value || '03:00',
+      interval_hours: parseInt(document.getElementById('schIntervalHours').value) || 6
+    },
+    timezone: document.getElementById('tzSelect').value || 'Asia/Shanghai'
+  };
+  await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  alert('定时设置已保存（含时区）');
+  updateSchHint();
+}
+async function updateSchHint() {
+  try {
+    const r = await fetch('/api/stats');
+    const s = await r.json();
+    let txt = '当前生效时区：' + (s.timezone || 'Asia/Shanghai');
+    if (s.last_auto_run) {
+      txt += ' ｜ 上次自动运行：' + new Date(s.last_auto_run * 1000).toLocaleString('zh-CN');
+    }
+    document.getElementById('schHint').textContent = txt;
+  } catch (e) {}
+}
+
+/* ---------- 手动刮削 ---------- */
+async function startScrape() {
+  const r = await fetch('/api/scrape', { method: 'POST' });
+  const j = await r.json();
+  if (!j.ok) alert(j.msg);
+}
+async function forceRescrape() {
+  if (!confirm('确定强制重刮全部影片？\n\n将无视已刮削状态重新刮削所有影片（更新标题/海报/评分），已有文件会被覆盖。')) return;
+  const r = await fetch('/api/scrape', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force: true}) });
+  const j = await r.json();
+  if (!j.ok) alert(j.msg);
+}
+async function cancelScrape() { await fetch('/api/cancel', { method: 'POST' }); }
+
+async function poll() {
+  try {
+    const r = await fetch('/api/status');
+    const s = await r.json();
+    const badge = document.getElementById('badge');
+    if (s.running) { badge.textContent = '运行中'; badge.className = 'badge run'; }
+    else if (s.result) { badge.textContent = '完成'; badge.className = 'badge done'; }
+    else { badge.textContent = '空闲'; badge.className = 'badge idle'; }
+    document.getElementById('log').textContent = (s.log || []).join('\n') || '暂无日志';
+    const p = s.progress || {};
+    const bar = document.getElementById('pbar');
+    if (s.running && p.total) {
+      bar.style.display = 'block';
+      document.getElementById('pfill').style.width = Math.round(p.current / p.total * 100) + '%';
+    } else { bar.style.display = 'none'; }
+    if (s.result) {
+      const res = s.result;
+      document.getElementById('result').textContent = res.ok
+        ? `✅ 完成：成功 ${res.success||0}，失败 ${res.fail||0}，跳过已刮削 ${res.skip||0}`
+        : `⚠️ ${res.msg || ''}`;
+    }
+  } catch (e) {}
+}
+
+/* ---------- 历史日志 ---------- */
+async function refreshLogDates() {
+  const r = await fetch('/api/logs');
+  const j = await r.json();
+  const sel = document.getElementById('logDate');
+  const cur = sel.value;
+  sel.innerHTML = (j.dates || []).map(d => `<option value="${d}">${d}</option>`).join('')
+    || '<option value="">无历史日志</option>';
+  if (cur && j.dates && j.dates.includes(cur)) sel.value = cur;
+  if (sel.value) loadHistoryLog();
+}
+async function loadHistoryLog() {
+  const d = document.getElementById('logDate').value;
+  if (!d) { document.getElementById('historyLog').textContent = '选择日期查看历史日志'; return; }
+  const r = await fetch('/api/logs?date=' + d);
+  const j = await r.json();
+  document.getElementById('historyLog').textContent = j.content || '（该日期无日志内容）';
+}
+async function cleanLogs() {
+  if (!confirm('确定删除 7 天前的所有日志文件？')) return;
+  const r = await fetch('/api/logs/cleanup?days=7', { method: 'POST' });
+  const j = await r.json();
+  document.getElementById('cleanMsg').textContent = '🧹 ' + j.msg + (j.removed.length ? '：' + j.removed.join(', ') : '（没有可删除的日志）');
+  refreshLogDates();
+}
+async function cleanAllLogs() {
+  if (!confirm('确定删除全部历史日志？\n\n此操作不可恢复（包括今天的日志），请确认不再需要。')) return;
+  if (!confirm('再次确认：真的要删除所有日志文件吗？')) return;
+  const r = await fetch('/api/logs/cleanup?all=1', { method: 'POST' });
+  const j = await r.json();
+  document.getElementById('cleanMsg').textContent = '🗑 ' + j.msg + (j.removed.length ? '：' + j.removed.join(', ') : '（没有日志）');
+  refreshLogDates();
+}
+
+function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ---------- 状态明细弹窗 ---------- */
+const ST_LABEL = {scraped:'已刮削', pending:'未刮削', failed:'刮削失败'};
+async function showMovies(status) {
+  const names = {all:'已识别影片', scraped:'已刮削', pending:'未刮削', failed:'刮削失败'};
+  document.getElementById('modalTitle').textContent = '📋 ' + names[status] + ' — 影片明细';
+  document.getElementById('modalBody').innerHTML = '<div style="color:#6b7280;padding:20px;text-align:center">加载中…</div>';
+  document.getElementById('modal').style.display = 'flex';
+  try {
+    const r = await fetch('/api/movies?status=' + status);
+    const j = await r.json();
+    const list = j.movies || [];
+    if (!list.length) {
+      document.getElementById('modalBody').innerHTML = '<div style="color:#6b7280;padding:24px;text-align:center">无影片</div>';
+      return;
+    }
+    const groups = {};
+    list.forEach(m => { (groups[m.dir] = groups[m.dir] || []).push(m); });
+    let html = '';
+    for (const [dir, items] of Object.entries(groups)) {
+      html += '<h4>📁 ' + esc(dir) + '（' + items.length + '）</h4>';
+      html += '<table><thead><tr><th>番号</th><th>影片文件</th><th>状态</th><th>失败原因</th></tr></thead><tbody>';
+      html += items.map(m =>
+        `<tr><td>${esc(m.dvdid)}</td><td>${esc(m.file.split('/').pop())}</td><td class="st-${m.status}">${ST_LABEL[m.status]}</td><td style="color:#f85149">${esc(m.error||'')}</td></tr>`).join('');
+      html += '</tbody></table>';
+    }
+    document.getElementById('modalBody').innerHTML = html;
+  } catch (e) {
+    document.getElementById('modalBody').innerHTML = '<div style="color:#f85149;padding:20px;text-align:center">加载失败</div>';
+  }
+}
+function hideModal() { document.getElementById('modal').style.display = 'none'; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideModal(); });
+
+loadCfg(); loadStats(); poll(); refreshLogDates();
+setInterval(poll, 2500);
+setInterval(loadStats, 10000);
+setInterval(updateSchHint, 60000);
+</script>
+</body>
+</html>

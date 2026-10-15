@@ -8,6 +8,8 @@ DEFAULTS = {
     "input_directories": [],                  # 刮削目录列表（可多个）
     "javdb_cookie": "",                       # javdb cookie（可选，被反爬拦截时配置）
     "proxy": "",                              # http 代理（可选）
+    "timezone": "Asia/Shanghai",              # 时区（定时任务与日志按此时区）
+    "use_chinese_title": False,               # True: title 用 javdb 中文翻译, originaltitle 用原始标题
     "auto_schedule": {                        # 定时自动刮削
         "enabled": False,
         "mode": "daily",                      # daily=每天固定时间 / interval=每 N 小时

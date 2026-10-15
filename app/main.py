@@ -32,6 +32,24 @@ def _add_log(msg):
     log.info(msg)
 
 
+def _apply_timezone(tz):
+    """应用时区（定时任务与日志按此时区）。非法时区回退 Asia/Shanghai"""
+    if not tz:
+        tz = "Asia/Shanghai"
+    try:
+        from zoneinfo import ZoneInfo
+        ZoneInfo(tz)  # 校验
+    except Exception:
+        tz = "Asia/Shanghai"
+    os.environ["TZ"] = tz
+    time.tzset()
+    return tz
+
+
+def _current_tz():
+    return os.environ.get("TZ") or "Asia/Shanghai"
+
+
 # ---------------- 页面 ----------------
 
 @app.get("/", response_class=HTMLResponse)
@@ -51,6 +69,7 @@ def get_config():
 @app.post("/api/config")
 def set_config(payload: dict):
     cfg = cfgmod.update_config(**payload)
+    _apply_timezone(cfg.get("timezone"))
     return JSONResponse(cfg)
 
 
@@ -76,16 +95,17 @@ def browse(path: str = "/"):
 # ---------------- 刮削控制 ----------------
 
 @app.post("/api/scrape")
-def start_scrape():
+def start_scrape(payload: dict = None):
+    force = bool((payload or {}).get("force"))
     cfg = cfgmod.load_config()
     with _lock:
         if _state["running"]:
             return JSONResponse({"ok": False, "msg": "已有刮削任务在运行"}, status_code=400)
         _state.update(running=True, log=[], result=None, cancel=False,
                       progress={"current": 0, "total": 0})
-    t = threading.Thread(target=_run_scrape, args=(cfg,), daemon=True)
+    t = threading.Thread(target=_run_scrape, args=(cfg, force), daemon=True)
     t.start()
-    return JSONResponse({"ok": True, "msg": "刮削已启动"})
+    return JSONResponse({"ok": True, "msg": "强制重刮已启动（全部影片将重新刮削）" if force else "刮削已启动"})
 
 
 @app.post("/api/cancel")
@@ -146,6 +166,7 @@ def get_stats():
         "dirs": per_dir,
         "failed_list": failed_list,
         "last_auto_run": st.get("last_auto_run", 0),
+        "timezone": _current_tz(),
     })
 
 
@@ -183,7 +204,11 @@ def get_logs(date: str = None):
 
 
 @app.post("/api/logs/cleanup")
-def logs_cleanup(days: int = 7):
+def logs_cleanup(days: int = 7, all: bool = False):
+    if all:
+        removed = store.purge_logs()
+        return JSONResponse({"ok": True, "removed": removed,
+                             "msg": "已删除全部 {} 个日志文件".format(len(removed))})
     removed = store.cleanup_logs(days)
     return JSONResponse({"ok": True, "removed": removed,
                          "msg": "已删除 {} 天前的 {} 个日志文件".format(days, len(removed))})
@@ -250,6 +275,9 @@ def _scheduler_loop():
 
 @app.on_event("startup")
 def _on_startup():
+    cfg = cfgmod.load_config()
+    tz = _apply_timezone(cfg.get("timezone"))
+    log.info("时区: %s", tz)
     threading.Thread(target=_scheduler_loop, daemon=True).start()
 
 
@@ -281,7 +309,7 @@ def _ensure_folder_poster(video_file):
         return False
 
 
-def _run_scrape(cfg):
+def _run_scrape(cfg, force=False):
     try:
         dirs = [d for d in (cfg.get("input_directories") or []) if d and os.path.isdir(d)]
         skipped_cfg = [d for d in (cfg.get("input_directories") or []) if d and not os.path.isdir(d)]
@@ -303,9 +331,13 @@ def _run_scrape(cfg):
             _state["result"] = {"ok": True, "success": 0, "fail": 0, "skip": 0, "total": 0}
             return
 
-        targets = [m for m in movies if not scraper.is_scraped(m["file"])]
-        _add_log("共 {} 个影片，已刮削 {}，本次待处理 {}".format(
-            len(movies), len(movies) - len(targets), len(targets)))
+        if force:
+            targets = list(movies)
+            _add_log("🔁 强制重刮模式：全部 {} 个影片将重新刮削（更新标题/海报等）".format(len(movies)))
+        else:
+            targets = [m for m in movies if not scraper.is_scraped(m["file"])]
+            _add_log("共 {} 个影片，已刮削 {}，本次待处理 {}".format(
+                len(movies), len(movies) - len(targets), len(targets)))
 
         # 已刮削影片：补齐单视频文件夹的 poster.jpg（兼容之前版本刮好的数据）
         for m in movies:
@@ -330,7 +362,12 @@ def _run_scrape(cfg):
                     data = s.scrape(m["dvdid"])
                     if not data or not data.get("title"):
                         raise RuntimeError("javdb 未找到该番号或数据不完整")
-                    scraper.generate_nfo(m["dvdid"], data, nfo_path,
+                    # 标题选择：默认用原始标题；开启中文选项且 javdb 有翻译时 title=中文、originaltitle=原始
+                    d2 = dict(data)
+                    d2["title_original"] = data.get("title") or m["dvdid"]
+                    if cfg.get("use_chinese_title") and data.get("title_local"):
+                        d2["title"] = data["title_local"]
+                    scraper.generate_nfo(m["dvdid"], d2, nfo_path,
                                          poster_name=os.path.basename(poster_path),
                                          fanart_name=os.path.basename(fanart_path))
                     # fanart = 横版主封面；poster = 预览竖图，没有则取横图右半边（DVD 盒正面）

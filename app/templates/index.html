@@ -128,6 +128,7 @@
 
   <div class="card">
     <h2>⚙️ 数据源设置</h2>
+    <div class="checkbox"><input type="checkbox" id="useCnTitle"><span>刮削电影中文名（如有）— 开启后 NFO 的 title 用 javdb 中文翻译，originaltitle 保留原始标题；关闭时 title 直接用原始标题（默认关闭，javdb 的 AI 翻译质量一般）</span></div>
     <label>javdb Cookie（可选 — 正常情况无需填写；只有被反爬拦截(403/503)时才需要）</label>
     <input id="javdb_cookie" placeholder="留空即可；如需填写：浏览器登录 javdb.com → F12 → 网络请求头复制整段 Cookie">
     <label>HTTP 代理（可选 — 填写代理服务器地址；服务器能直连 javdb 就留空）</label>
@@ -181,8 +182,28 @@
         </select>
       </div>
     </div>
+    <div class="field2">
+      <div>
+        <label>时区（定时任务与日志按此时区）</label>
+        <select id="tzSelect">
+          <option value="Asia/Shanghai">Asia/Shanghai — 中国标准时间（默认）</option>
+          <option value="Asia/Hong_Kong">Asia/Hong_Kong — 香港</option>
+          <option value="Asia/Taipei">Asia/Taipei — 台北</option>
+          <option value="Asia/Tokyo">Asia/Tokyo — 日本</option>
+          <option value="Asia/Singapore">Asia/Singapore — 新加坡</option>
+          <option value="Asia/Bangkok">Asia/Bangkok — 曼谷</option>
+          <option value="Asia/Seoul">Asia/Seoul — 首尔</option>
+          <option value="UTC">UTC</option>
+          <option value="Europe/London">Europe/London — 伦敦</option>
+          <option value="Europe/Berlin">Europe/Berlin — 柏林</option>
+          <option value="America/New_York">America/New_York — 纽约</option>
+          <option value="America/Los_Angeles">America/Los_Angeles — 洛杉矶</option>
+          <option value="Australia/Sydney">Australia/Sydney — 悉尼</option>
+        </select>
+      </div>
+    </div>
     <div class="hint" id="schHint"></div>
-    <div class="hint">自动刮削按服务器（Docker 宿主机）时间在上述固定时间点触发</div>
+    <div class="hint">上方时间按所选时区触发；保存后立即生效，无需重启容器</div>
     <button onclick="saveSchedule()">💾 保存定时设置</button>
   </div>
 
@@ -190,9 +211,11 @@
     <h2>🚀 手动刮削</h2>
     <div class="row">
       <button onclick="startScrape()">▶ 开始检查刮削</button>
+      <button class="danger" onclick="forceRescrape()">🔁 强制重刮全部</button>
       <button class="secondary" onclick="cancelScrape()">⏹ 取消</button>
       <span id="badge" class="badge idle">空闲</span>
     </div>
+    <div class="hint" style="margin-top:10px">「开始检查刮削」只处理未刮削和失败的影片；「强制重刮全部」无视状态重新刮削所有影片（用于切换标题语言、更新最新海报/评分等）</div>
     <div class="progressbar" id="pbar"><div id="pfill"></div></div>
     <div id="result"></div>
     <div style="margin-top:14px;"><label>本次运行日志</label>
@@ -206,6 +229,7 @@
       <select id="logDate" style="flex:1; margin-bottom:0;" onchange="loadHistoryLog()"><option value="">加载日期中…</option></select>
       <button class="secondary" onclick="refreshLogDates()">刷新</button>
       <button class="danger" onclick="cleanLogs()">🧹 删除 7 天前日志</button>
+      <button class="danger" onclick="cleanAllLogs()">🗑 删除所有日志</button>
     </div>
     <div id="cleanMsg"></div>
     <div id="historyLog" class="log historical">选择日期查看历史日志</div>
@@ -252,12 +276,16 @@ async function loadCfg() {
   const c = await r.json();
   cfgDirs = c.input_directories || [];
   document.getElementById('javdb_cookie').value = c.javdb_cookie || '';
+  document.getElementById('useCnTitle').checked = !!c.use_chinese_title;
   fillProxy(c.proxy || '');
   const sch = c.auto_schedule || {};
   document.getElementById('schEnabled').checked = !!sch.enabled;
   document.getElementById('schMode').value = sch.mode || 'daily';
   document.getElementById('schDailyTime').value = sch.daily_time || '03:00';
   document.getElementById('schIntervalHours').value = (parseInt(sch.interval_hours) === 4) ? '4' : '8';
+  const tzSel = document.getElementById('tzSelect');
+  tzSel.value = c.timezone || 'Asia/Shanghai';
+  if (!tzSel.value) tzSel.value = 'Asia/Shanghai';
   schModeChange(); renderDirs();
 }
 function renderDirs() {
@@ -281,6 +309,7 @@ async function saveCfg(silent) {
   const payload = {
     input_directories: cfgDirs,
     javdb_cookie: document.getElementById('javdb_cookie').value,
+    use_chinese_title: document.getElementById('useCnTitle').checked,
     proxy: buildProxy()
   };
   await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -366,28 +395,34 @@ async function saveSchedule() {
       mode: document.getElementById('schMode').value,
       daily_time: document.getElementById('schDailyTime').value || '03:00',
       interval_hours: parseInt(document.getElementById('schIntervalHours').value) || 6
-    }
+    },
+    timezone: document.getElementById('tzSelect').value || 'Asia/Shanghai'
   };
   await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-  alert('定时设置已保存');
+  alert('定时设置已保存（含时区）');
   updateSchHint();
 }
 async function updateSchHint() {
   try {
     const r = await fetch('/api/stats');
     const s = await r.json();
+    let txt = '当前生效时区：' + (s.timezone || 'Asia/Shanghai');
     if (s.last_auto_run) {
-      const t = new Date(s.last_auto_run * 1000).toLocaleString('zh-CN');
-      document.getElementById('schHint').textContent = '上次自动运行：' + t;
-    } else {
-      document.getElementById('schHint').textContent = '';
+      txt += ' ｜ 上次自动运行：' + new Date(s.last_auto_run * 1000).toLocaleString('zh-CN');
     }
+    document.getElementById('schHint').textContent = txt;
   } catch (e) {}
 }
 
 /* ---------- 手动刮削 ---------- */
 async function startScrape() {
   const r = await fetch('/api/scrape', { method: 'POST' });
+  const j = await r.json();
+  if (!j.ok) alert(j.msg);
+}
+async function forceRescrape() {
+  if (!confirm('确定强制重刮全部影片？\n\n将无视已刮削状态重新刮削所有影片（更新标题/海报/评分），已有文件会被覆盖。')) return;
+  const r = await fetch('/api/scrape', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force: true}) });
   const j = await r.json();
   if (!j.ok) alert(j.msg);
 }
@@ -440,6 +475,14 @@ async function cleanLogs() {
   const r = await fetch('/api/logs/cleanup?days=7', { method: 'POST' });
   const j = await r.json();
   document.getElementById('cleanMsg').textContent = '🧹 ' + j.msg + (j.removed.length ? '：' + j.removed.join(', ') : '（没有可删除的日志）');
+  refreshLogDates();
+}
+async function cleanAllLogs() {
+  if (!confirm('确定删除全部历史日志？\n\n此操作不可恢复（包括今天的日志），请确认不再需要。')) return;
+  if (!confirm('再次确认：真的要删除所有日志文件吗？')) return;
+  const r = await fetch('/api/logs/cleanup?all=1', { method: 'POST' });
+  const j = await r.json();
+  document.getElementById('cleanMsg').textContent = '🗑 ' + j.msg + (j.removed.length ? '：' + j.removed.join(', ') : '（没有日志）');
   refreshLogDates();
 }
 

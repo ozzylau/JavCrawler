@@ -94,6 +94,26 @@ def read_log(date):
         return ""
 
 
+def purge_logs():
+    """删除全部日志文件，返回被删除的日期列表"""
+    _ensure()
+    removed = []
+    for f in os.listdir(LOG_DIR):
+        if not f.endswith(".log"):
+            continue
+        d = f[:-4]
+        try:
+            datetime.date.fromisoformat(d)
+        except ValueError:
+            continue
+        try:
+            os.remove(os.path.join(LOG_DIR, f))
+            removed.append(d)
+        except OSError:
+            pass
+    return sorted(removed)
+
+
 def cleanup_logs(days=7):
     """删除 N 天前的日志，返回被删除的日期列表"""
     _ensure()

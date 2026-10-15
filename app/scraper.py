@@ -112,13 +112,15 @@ class JavdbScraper:
         tree = lxml_html.fromstring(r.content.decode("utf-8", "ignore"))
         data = {"url": full}
 
-        # 标题：优先原始标题（javdb 的中文是 AI 翻译，质量差），无翻译时退回主标题
+        # 标题：title=原始标题（javdb 的中文是 AI 翻译，质量差）；title_local=javdb 主标题（可能是中文翻译）
+        cur = tree.xpath("//h2/strong[@class='current-title']/text()")
+        cur_t = cur[0].strip() if cur else ""
         origin = tree.xpath("//h2/span[contains(@class,'origin-title')]/text()")
         if origin and origin[0].strip():
             data["title"] = origin[0].strip()
         else:
-            t = tree.xpath("//h2/strong[@class='current-title']/text()")
-            data["title"] = t[0].strip() if t else ""
+            data["title"] = cur_t
+        data["title_local"] = cur_t
         c = tree.xpath("//img[@class='video-cover']/@src")
         data["fanart"] = c[0] if c else ""  # 主封面（横版，DVD 盒展开图）→ fanart
         # 预览大图列表（_l_ 原图；其中可能是竖版海报或横版截图）
@@ -286,8 +288,9 @@ def generate_nfo(dvdid, data, out_path, poster_name="poster.jpg", fanart_name="f
     year = data.get("date", "")[:4] if data.get("date") else ""
     movie = ET.Element("movie")
     title = data.get("title") or dvdid
+    original = data.get("title_original") or title
     ET.SubElement(movie, "title").text = f"{dvdid} {safe_name(title)}".strip()
-    ET.SubElement(movie, "originaltitle").text = safe_name(title)
+    ET.SubElement(movie, "originaltitle").text = safe_name(original)
     ET.SubElement(movie, "sorttitle").text = dvdid
     ET.SubElement(movie, "uniqueid", {"type": "javdb", "default": "true"}).text = dvdid
     if year:
