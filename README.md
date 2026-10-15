@@ -1,6 +1,6 @@
 # JavCrawler
 
-基于 [javdb](https://javdb.com) 数据的 JAV 影片刮削工具：为视频文件**就地**生成标准 `NFO` 元数据与海报，供 **Infuse / Kodi / Emby / Jellyfin** 等媒体库识别。
+基于 [javdb](https://javdb.com) 数据的 **AV 小姐姐电影影片刮削工具**：为视频文件**就地**生成标准 `NFO` 元数据与海报，供 **Infuse / Kodi / Emby / Jellyfin** 等媒体库识别。
 
 > ⚠️ 仅供个人学习研究，请遵守所在地区法律法规。视频文件本身不会被移动、重命名或改动。
 
