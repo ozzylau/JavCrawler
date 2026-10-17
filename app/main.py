@@ -368,6 +368,7 @@ def _run_scrape(cfg, force=False):
                 _add_log("刮削引擎: {}（备用: {}）".format(p_name, b_name))
             else:
                 _add_log("刮削引擎: {}（未启用备用）".format(p_name))
+            zh_ready = None  # javdb 中文标题补抓引擎（懒创建；None=未初始化）
             for idx, m in enumerate(targets, 1):
                 if _state["cancel"]:
                     _add_log("已取消")
@@ -393,11 +394,28 @@ def _run_scrape(cfg, force=False):
                             _add_log("  · 备用引擎 {} 请求异常: {}".format(b_name, be))
                     if not data or not data.get("title"):
                         raise RuntimeError("{} 未找到该番号或数据不完整".format(p_name))
-                    # 标题选择：默认用原始标题；开启中文选项且 javdb 有翻译时 title=中文、originaltitle=原始
+                    # 标题选择：默认用原始标题；开启中文选项且引擎有翻译时 title=中文、originaltitle=原始
                     d2 = dict(data)
                     d2["title_original"] = data.get("title") or m["dvdid"]
                     if cfg.get("use_chinese_title") and data.get("title_local"):
                         d2["title"] = data["title_local"]
+                    # javbus 主引擎 + 勾选中文标题：javbus 只有原始标题，向 javdb 单独补抓标题
+                    # （只取标题字段，不依赖“备用引擎补抓”开关；javdb 请求失败不影响本次刮削）
+                    if cfg.get("use_chinese_title") and data.get("engine") == "javbus":
+                        if zh_ready is None:
+                            if b_name == "javdb" and backup is not None:
+                                zh_ready = backup
+                            else:
+                                zh_ready = scraper.JavdbScraper(
+                                    cookie=cfg.get("javdb_cookie", ""),
+                                    proxy=cfg.get("proxy_javdb", ""))
+                        try:
+                            zd = zh_ready.scrape(m["dvdid"])
+                            if zd and zd.get("title_local") and zd["title_local"] != d2["title_original"]:
+                                d2["title"] = zd["title_local"]
+                                _add_log("  · 已从 javdb 补抓中文标题")
+                        except Exception as te:
+                            _add_log("  ! javdb 中文标题补抓失败: {}".format(te))
                     scraper.generate_nfo(m["dvdid"], d2, nfo_path,
                                          poster_name=os.path.basename(poster_path),
                                          fanart_name=os.path.basename(fanart_path))
