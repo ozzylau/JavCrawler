@@ -2,6 +2,7 @@
 import datetime
 import logging
 import os
+import re
 import shutil
 import threading
 import time
@@ -310,6 +311,27 @@ def _rewrite_absolute_urls(html, engine):
     return html
 
 
+def _rewrite_relative_urls(html, engine):
+    """把以 / 开头的根相对路径（img src、a href 等）改写为检查代理路径。
+
+    否则浏览器会把 /pics/thumb/x.jpg 这类路径解析到本服务
+    （如 http://10.20.0.228:8300/pics/thumb/x.jpg），导致图片裂图。
+    """
+    prefix = f"/api/inspect/{engine}"
+    html = re.sub(
+        r'(\s(?:src|href|action|poster)\s*=\s*)(["\'])/(?!/)(?!api/inspect/)',
+        r"\1\2" + prefix + "/",
+        html)
+    # 协议相对地址（//www.javbus.com/...）
+    for domain, p in _INSPECT_ALIAS.get(engine, {}).items():
+        host = domain.split("://", 1)[1]
+        html = html.replace(f'"//{host}/', f'"{p}/')
+        html = html.replace(f"'//{host}/", f"'{p}/")
+    # 内联 CSS url(/...)
+    html = html.replace("url(/", f"url({prefix}/")
+    return html
+
+
 @app.api_route("/api/inspect/{engine}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"])
 async def inspect_proxy(engine: str, path: str, request: Request):
     if engine not in INSPECT_TARGETS:
@@ -360,6 +382,7 @@ async def inspect_proxy(engine: str, path: str, request: Request):
         try:
             html = content.decode(resp.encoding or "utf-8", "ignore")
             html = _rewrite_absolute_urls(html, engine)
+            html = _rewrite_relative_urls(html, engine)
             base_tag = f'<base href="/api/inspect/{engine}/">'
             low = html.lower()
             if "<head" in low:
@@ -396,6 +419,55 @@ def inspect_save_cookies(engine: str):
     cfgmod.update_config(**{field: cookie_str})
     _add_log("已保存 {} 的验证 cookie（{} 项），刮削器将在下次任务中生效".format(engine, len(jar)))
     return {"ok": True, "field": field, "count": len(jar)}
+
+
+@app.post("/api/inspect-test/{engine}")
+async def inspect_test(engine: str, request: Request):
+    """实验室抓取验证：用检查会话（含捕获的 cookie）+ 引擎配置的代理试抓一个番号，
+    返回整理后的 NFO 元数据预览。仅验证抓取链路，不写盘、不落库。"""
+    if engine not in INSPECT_TARGETS:
+        return JSONResponse({"error": "engine 必须是 javbus 或 javdb"}, status_code=404)
+    try:
+        payload = await request.json() or {}
+    except Exception:
+        payload = {}
+    keyword = str(payload.get("keyword") or "").strip()
+    if not keyword:
+        return {"ok": False, "msg": "请输入要验证的番号，例如 SSIS-129"}
+    cookie_str = "; ".join(f"{c.name}={c.value}" for c in _inspect_sessions[engine].cookies)
+    cfg = cfgmod.load_config()
+    proxy_url = (cfg.get("proxy_javbus") or "").strip() if engine == "javbus" else (cfg.get("proxy_javdb") or "").strip()
+
+    def _run():
+        if engine == "javbus":
+            sc = scraper.JavBusScraper(cookie=cookie_str, proxy=proxy_url, timeout=20)
+        else:
+            sc = scraper.JavdbScraper(cookie=cookie_str, proxy=proxy_url, timeout=20)
+        return sc.scrape(keyword)
+
+    from starlette.concurrency import run_in_threadpool
+    try:
+        data = await run_in_threadpool(_run)
+    except Exception as e:
+        return {"ok": False, "msg": "抓取失败：{}（网络：{}）".format(e, proxy_url or "直连")}
+    if not data:
+        return {"ok": False, "msg": "{} 未搜索到 {}（若反复失败，可能被反爬拦截，请先在左侧页面完成验证）".format(engine, keyword)}
+    result = {
+        "dvdid": data.get("dvdid") or keyword.upper(),
+        "title": data.get("title") or "",
+        "title_local": data.get("title_local") or "",
+        "date": data.get("date") or "",
+        "duration": data.get("duration") or "",
+        "director": data.get("director") or "",
+        "maker": data.get("maker") or "",
+        "actors": data.get("actors") or [],
+        "genres": data.get("genres") or [],
+        "plot": (data.get("plot") or "")[:300],
+        "poster": data.get("poster_url") or data.get("poster") or "",
+        "fanart": data.get("fanart") or "",
+        "url": data.get("url") or "",
+    }
+    return {"ok": True, "engine": engine, "data": result, "proxy": proxy_url or "直连"}
 
 
 @app.on_event("startup")

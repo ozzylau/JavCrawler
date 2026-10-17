@@ -85,6 +85,7 @@
 <div class="wrap">
   <h1>JavCrawler</h1>
   <div class="sub">使用JAVDB刮削小姐姐电影，兼容Infuse、Kodi、Emby、Jellyfin等播放器</div>
+  <div class="sub" style="margin-top:5px">开源项目：<a href="https://github.com/ozzylau/JavCrawler" target="_blank" style="color:#58a6ff; text-decoration:none">https://github.com/ozzylau/JavCrawler</a>，使用有问题请在这里提交反馈</div>
 
   <div class="card">
     <h2>📊 刮削状态</h2>
@@ -193,7 +194,7 @@
     </div>
     <div style="margin-top:16px; border-top:1px solid #2a3040; padding-top:14px;">
       <h2 style="font-size:14px">🧪 实验室功能：反爬验证检查</h2>
-      <div class="hint" style="margin-bottom:10px">当刮削日志出现「请求失败 / 被拦截 / 超时」时，可能是采集源触发了反爬验证（验证码、人机答题等）。点击按钮在页面内打开对应站点的内嵌浏览器（与刮削器使用相同的网络配置），人工完成验证后，点「保存 Cookie 并应用到刮削器」。注意：实验性功能——内嵌页面样式/部分资源可能显示不完整，不影响完成验证。</div>
+      <div class="hint" style="margin-bottom:10px">当刮削日志出现「请求失败 / 被拦截 / 超时」时，可能是采集源触发了反爬验证（验证码、人机答题等）。点击按钮在页面内打开对应站点的内嵌浏览器（自动使用该引擎已配置的代理与 Cookie，未配置代理则直连），人工完成验证后，点「保存 Cookie 并应用到刮削器」。还可以在右侧输入番号（如 SSIS-129）做抓取验证，预览整理出的 NFO 元数据（不写盘）。注意：实验性功能——内嵌页面样式/部分资源可能显示不完整，不影响完成验证。</div>
       <div class="row">
         <button onclick="openInspect('javbus')">🔎 检查 JavBus</button>
         <button onclick="openInspect('javdb')">🔎 检查 JavDB</button>
@@ -574,18 +575,35 @@ async function showMovies(status) {
     document.getElementById('modalBody').innerHTML = '<div style="color:#f85149;padding:20px;text-align:center">加载失败</div>';
   }
 }
-function hideModal() { document.getElementById('modal').style.display = 'none'; }
+function hideModal() {
+  document.getElementById('modal').style.display = 'none';
+  document.getElementById('modalBox').style.maxWidth = '';
+}
 
 /* ---------- 反爬验证检查（实验性） ---------- */
 function openInspect(engine) {
   const names = { javbus: 'JavBus', javdb: 'JavDB' };
   document.getElementById('modalTitle').textContent = '🧪 ' + names[engine] + ' 反爬验证检查';
+  document.getElementById('modalBox').style.maxWidth = '1150px';
   document.getElementById('modalBody').innerHTML = `
     <div style="font-size:13px;color:#8a93a5;margin-bottom:8px">
-      下方为通过本服务代理访问的 ${names[engine]} 页面。如果出现验证码 / 人机答题，请在页面内完成验证；
-      完成后（能看到正常影片页面）点「保存 Cookie 并应用到刮削器」。完成后建议再点「强制重刮全部」。
+      左侧为通过本服务代理访问的 ${names[engine]} 页面（与刮削器使用相同的网络与 Cookie 配置）。如果出现验证码 / 人机答题，
+      请在页面内完成验证，然后点「保存 Cookie 并应用到刮削器」。右侧可输入番号做抓取验证（仅预览元数据，不写入影片目录）。
     </div>
-    <iframe src="/api/inspect/${engine}/" style="width:100%; height:55vh; border:1px solid #2a3040; border-radius:8px; background:#fff"></iframe>
+    <div style="display:flex; gap:12px; align-items:stretch">
+      <div style="flex:1.3; min-width:0">
+        <div style="font-size:12px;color:#8a93a5;margin-bottom:4px">🌐 内嵌浏览器</div>
+        <iframe src="/api/inspect/${engine}/" style="width:100%; height:52vh; border:1px solid #2a3040; border-radius:8px; background:#fff"></iframe>
+      </div>
+      <div style="flex:1; min-width:0; display:flex; flex-direction:column">
+        <div style="font-size:12px;color:#8a93a5;margin-bottom:4px">🧪 抓取验证（不存盘）</div>
+        <div class="row" style="margin-bottom:8px">
+          <input id="testKeyword" placeholder="输入番号，如 SSIS-129" style="flex:1; margin-bottom:0" onkeydown="if(event.key==='Enter')runInspectTest('${engine}')">
+          <button onclick="runInspectTest('${engine}')">验证抓取</button>
+        </div>
+        <div id="testResult" style="flex:1; overflow:auto; border:1px solid #2a3040; border-radius:8px; padding:10px; font-size:12.5px; color:#c9d1d9; min-height:45vh">输入番号后点「验证抓取」，这里会显示刮削器整理出的 NFO 元数据（仅预览，不会写入影片目录）。</div>
+      </div>
+    </div>
     <div class="row" style="margin-top:12px; align-items:center">
       <button onclick="saveInspectCookies('${engine}')">💾 保存 Cookie 并应用到刮削器</button>
       <button class="secondary" onclick="showInspectCookies('${engine}')">🔄 刷新捕获状态</button>
@@ -595,6 +613,35 @@ function openInspect(engine) {
       <textarea id="inspectCookie" readonly rows="3" style="width:100%; font-family:Menlo,Consolas,monospace; font-size:11px"></textarea></div>`;
   document.getElementById('modal').style.display = 'flex';
   showInspectCookies(engine);
+}
+async function runInspectTest(engine) {
+  const box = document.getElementById('testResult');
+  const kw = document.getElementById('testKeyword').value.trim();
+  if (!kw) { box.innerHTML = '<span style="color:#f85149">请先输入要验证的番号</span>'; return; }
+  box.innerHTML = '⏳ 正在抓取并解析…（使用引擎配置的网络，可能需要几秒）';
+  try {
+    const r = await fetch('/api/inspect-test/' + engine, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword: kw })
+    });
+    const j = await r.json();
+    if (!j.ok) { box.innerHTML = '<span style="color:#f85149">❌ ' + esc(j.msg || j.error || '抓取失败') + '</span>'; return; }
+    const d = j.data;
+    const row = (k, v) => v ? `<div style="margin-bottom:4px; word-break:break-all"><b style="color:#8a93a5">${k}</b>：${esc(v)}</div>` : '';
+    let html = '<div style="color:#7ee787;font-weight:bold;margin-bottom:8px">✅ 抓取成功 — NFO 元数据预览（未存盘）</div>';
+    html += row('番号', d.dvdid) + row('标题', d.title) + row('中文标题', d.title_local)
+      + row('发行日期', d.date) + row('时长', d.duration ? d.duration + ' 分钟' : '')
+      + row('导演', d.director) + row('片商', d.maker)
+      + row('演员', (d.actors || []).join(' / '))
+      + row('类型', (d.genres || []).join('、'))
+      + row('竖版海报', d.poster) + row('横版大封面', d.fanart)
+      + row('详情页', d.url);
+    if (d.plot) html += `<div style="margin-top:6px"><b style="color:#8a93a5">简介</b>：${esc(d.plot)}</div>`;
+    html += `<div style="margin-top:8px;color:#8a93a5;font-size:11.5px">网络：${esc(j.proxy || '')}　引擎：${esc(j.engine || engine)}</div>`;
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '<span style="color:#f85149">请求失败：' + esc(String(e)) + '</span>';
+  }
 }
 async function showInspectCookies(engine) {
   try {
