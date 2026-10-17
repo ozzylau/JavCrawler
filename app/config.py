@@ -7,6 +7,7 @@ CONFIG_PATH = os.environ.get("JAVCRAWLER_CONFIG", "/app/config.json")
 DEFAULTS = {
     "input_directories": [],                  # 刮削目录列表（可多个）
     "javdb_cookie": "",                       # javdb cookie（可选，被反爬拦截时配置）
+    "javbus_cookie": "",                      # javbus cookie（可选，被反爬拦截时配置）
     "proxy_javbus": "",                       # JavBus 代理（留空=直连；填写后只走代理，不回退直连）
     "proxy_javdb": "",                        # JavDB 代理（留空=直连）
     "engine": "javbus",                       # 刮削引擎: javbus(默认) / javdb

@@ -243,6 +243,10 @@
     <button onclick="saveSchedule()">💾 保存定时设置</button>
   </div>
 
+  <div id="antiBanner" style="display:none; background:#3d2e00; border:1px solid #ffb454; color:#ffd479; border-radius:10px; padding:12px 18px; margin-bottom:16px; font-size:13px;">
+    ⚠️ 检测到采集源请求异常（失败/被拦截/超时），可能是触发了站点的<strong>反爬验证</strong>。可点击下方按钮进入内嵌浏览器人工完成验证（验证码/答题），验证通过后一键把新 cookie 保存给刮削器。
+  </div>
+
   <div class="card">
     <h2>🚀 手动刮削</h2>
     <div class="row">
@@ -256,6 +260,15 @@
     <div id="result"></div>
     <div style="margin-top:14px;"><label>本次运行日志</label>
       <div id="log" class="log">暂无日志</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🧪 反爬验证检查（实验性）</h2>
+    <div class="hint" style="margin-bottom:10px">当刮削日志出现「请求失败 / 被拦截 / 超时」时，可能是采集源触发了反爬验证（验证码、人机答题等）。点击按钮在页面内打开对应站点的内嵌浏览器，人工完成验证后，点「保存 Cookie 并应用到刮削器」，刮削器下次任务会带上验证后的 cookie。注意：实验性功能——内嵌页面样式/部分资源可能显示不完整，不影响完成验证；已配置代理时本检查不走代理（直连）。</div>
+    <div class="row">
+      <button onclick="openInspect('javbus')">🔎 检查 JavBus</button>
+      <button onclick="openInspect('javdb')">🔎 检查 JavDB</button>
     </div>
   </div>
 
@@ -481,6 +494,10 @@ async function poll() {
     else if (s.result) { badge.textContent = '完成'; badge.className = 'badge done'; }
     else { badge.textContent = '空闲'; badge.className = 'badge idle'; }
     document.getElementById('log').textContent = (s.log || []).join('\n') || '暂无日志';
+    /* 反爬横幅：日志尾部出现采集源请求异常时提示 */
+    const tail = (s.log || []).slice(-8).join('\n');
+    const bad = /(javbus|javdb)[^\n]*(请求失败|经代理请求失败|反爬|拦截|超时|timed out|异常)/i.test(tail);
+    document.getElementById('antiBanner').style.display = bad ? 'block' : 'none';
     const p = s.progress || {};
     const bar = document.getElementById('pbar');
     if (s.running && p.total) {
@@ -563,6 +580,42 @@ async function showMovies(status) {
   }
 }
 function hideModal() { document.getElementById('modal').style.display = 'none'; }
+
+/* ---------- 反爬验证检查（实验性） ---------- */
+function openInspect(engine) {
+  const names = { javbus: 'JavBus', javdb: 'JavDB' };
+  document.getElementById('modalTitle').textContent = '🧪 ' + names[engine] + ' 反爬验证检查';
+  document.getElementById('modalBody').innerHTML = `
+    <div style="font-size:13px;color:#8a93a5;margin-bottom:8px">
+      下方为通过本服务代理访问的 ${names[engine]} 页面。如果出现验证码 / 人机答题，请在页面内完成验证；
+      完成后（能看到正常影片页面）点「保存 Cookie 并应用到刮削器」。完成后建议再点「强制重刮全部」。
+    </div>
+    <iframe src="/api/inspect/${engine}/" style="width:100%; height:55vh; border:1px solid #2a3040; border-radius:8px; background:#fff"></iframe>
+    <div class="row" style="margin-top:12px; align-items:center">
+      <button onclick="saveInspectCookies('${engine}')">💾 保存 Cookie 并应用到刮削器</button>
+      <button class="secondary" onclick="showInspectCookies('${engine}')">🔄 刷新捕获状态</button>
+      <span id="inspectMsg" style="font-size:13px;color:#8a93a5"></span>
+    </div>
+    <div style="margin-top:8px"><label style="font-size:12px;color:#8a93a5">当前捕获到的 Cookie</label>
+      <textarea id="inspectCookie" readonly rows="3" style="width:100%; font-family:Menlo,Consolas,monospace; font-size:11px"></textarea></div>`;
+  document.getElementById('modal').style.display = 'flex';
+  showInspectCookies(engine);
+}
+async function showInspectCookies(engine) {
+  try {
+    const r = await fetch('/api/inspect-cookies/' + engine);
+    const j = await r.json();
+    document.getElementById('inspectCookie').value = j.cookie || '（暂未捕获到 cookie，请先在页面里完成验证）';
+  } catch (e) { document.getElementById('inspectCookie').value = '读取失败: ' + e; }
+}
+async function saveInspectCookies(engine) {
+  const msg = document.getElementById('inspectMsg');
+  try {
+    const r = await fetch('/api/inspect-save/' + engine, { method: 'POST' });
+    const j = await r.json();
+    msg.textContent = j.ok ? `✅ 已保存 ${j.count} 项 cookie 到刮削器配置` : '⚠️ ' + (j.msg || j.error || '没有捕获到 cookie');
+  } catch (e) { msg.textContent = '保存失败: ' + e; }
+}
 document.addEventListener('keydown', e => { if (e.key === 'Escape') hideModal(); });
 
 loadCfg(); loadStats(); poll(); refreshLogDates();

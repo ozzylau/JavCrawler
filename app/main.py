@@ -5,9 +5,11 @@ import os
 import shutil
 import threading
 import time
+import urllib.parse
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+import requests
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from . import scraper, config as cfgmod, store
 
@@ -273,6 +275,120 @@ def _scheduler_loop():
         time.sleep(30)
 
 
+# ---------- 实验性：反爬验证检查（内嵌浏览器代理） ----------
+# 用途：采集源（javbus/javdb）触发反爬验证时，用户可在 WebUI 内嵌页面里人工完成
+# 验证码/答题，本代理会捕获验证后发放的 cookie，一键保存并应用到刮削器。
+# 说明：实验性功能——站点资源多为绝对路径，内嵌页面样式可能不完整，能过验证即可。
+
+INSPECT_TARGETS = {"javbus": "https://www.javbus.com", "javdb": "https://javdb.com"}
+_inspect_sessions = {}
+for _name, _base in INSPECT_TARGETS.items():
+    _s = requests.Session()
+    _s.headers.update({
+        "User-Agent": scraper.UA,
+        "Accept-Language": "zh-CN,zh;q=0.9,zh-TW;q=0.8,ja;q=0.5,en;q=0.6",
+    })
+    _inspect_sessions[_name] = _s
+# 代理域名→对应的检查代理前缀，用于重写 HTML 里的跨域绝对链接（实验性，尽力而为）
+_INSPECT_ALIAS = {
+    "javbus": {"https://www.javbus.com": "/api/inspect/javbus", "https://javbus.com": "/api/inspect/javbus"},
+    "javdb": {"https://javdb.com": "/api/inspect/javdb", "https://www.javdb.com": "/api/inspect/javdb"},
+}
+_HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+                "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length"}
+
+
+def _inspect_sessions_dict():
+    return _inspect_sessions
+
+
+def _rewrite_absolute_urls(html, engine):
+    """把 HTML 里指向采集源本站的绝对 URL 改写为代理路径（仅限 href/src/action 属性开头处）。"""
+    for domain, prefix in _INSPECT_ALIAS.get(engine, {}).items():
+        html = html.replace(f'"{domain}/', f'"{prefix}/')
+        html = html.replace(f"'{domain}/", f"'{prefix}/")
+    return html
+
+
+@app.api_route("/api/inspect/{engine}/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"])
+async def inspect_proxy(engine: str, path: str, request: Request):
+    if engine not in INSPECT_TARGETS:
+        return JSONResponse({"error": "engine 必须是 javbus 或 javdb"}, status_code=404)
+    sess = _inspect_sessions[engine]
+    base = INSPECT_TARGETS[engine]
+    qs = request.url.query
+    url = f"{base}/{path}" + (f"?{qs}" if qs else "")
+    # cookie 由 session jar 管理（捕获 Set-Cookie），不透传浏览器 cookie
+    fwd_headers = {k: v for k, v in request.headers.items()
+                   if k.lower() not in _HOP_HEADERS and k.lower() not in ("cookie", "accept-encoding")}
+    body = await request.body() if request.method in ("POST", "PUT") else None
+    try:
+        from starlette.concurrency import run_in_threadpool
+        resp = await run_in_threadpool(
+            lambda: sess.request(request.method, url, headers=fwd_headers, data=body,
+                                 allow_redirects=False, timeout=30))
+    except Exception as e:
+        return JSONResponse({"error": f"请求失败: {e}"}, status_code=502)
+    out_headers = {}
+    for k, v in resp.headers.items():
+        if k.lower() in ("content-encoding", "content-length", "transfer-encoding", "connection",
+                         "x-frame-options", "content-security-policy",
+                         "strict-transport-security", "set-cookie"):
+            continue
+        out_headers[k] = v
+    if resp.headers.get("location"):
+        loc = resp.headers["location"]
+        parsed = urllib.parse.urlparse(loc)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin in _INSPECT_ALIAS.get(engine, {}):
+            loc = _INSPECT_ALIAS[engine][origin] + parsed.path + (f"?{parsed.query}" if parsed.query else "")
+        elif loc.startswith("/"):
+            loc = f"/api/inspect/{engine}{loc}"
+        out_headers["Location"] = loc
+    content = resp.content
+    ctype = resp.headers.get("content-type", "")
+    if "text/html" in ctype:
+        try:
+            html = content.decode(resp.encoding or "utf-8", "ignore")
+            html = _rewrite_absolute_urls(html, engine)
+            base_tag = f'<base href="/api/inspect/{engine}/">'
+            low = html.lower()
+            if "<head" in low:
+                pos = low.index("<head") + low[low.index("<head"):].index(">") + 1
+                html = html[:pos] + base_tag + html[pos:]
+            else:
+                html = base_tag + html
+            content = html.encode("utf-8")
+        except Exception:
+            pass
+    return Response(content, status_code=resp.status_code, headers=out_headers)
+
+
+@app.get("/api/inspect-cookies/{engine}")
+def inspect_cookies(engine: str):
+    """查看检查代理当前捕获到的 cookie（未保存状态）"""
+    if engine not in INSPECT_TARGETS:
+        return JSONResponse({"error": "engine 必须是 javbus 或 javdb"}, status_code=404)
+    jar = _inspect_sessions[engine].cookies
+    cookie_str = "; ".join(f"{c.name}={c.value}" for c in jar)
+    return {"engine": engine, "cookie": cookie_str, "count": len(jar)}
+
+
+@app.post("/api/inspect-save/{engine}")
+def inspect_save_cookies(engine: str):
+    """把检查代理捕获的 cookie 保存到配置并应用到刮削器"""
+    if engine not in INSPECT_TARGETS:
+        return JSONResponse({"error": "engine 必须是 javbus 或 javdb"}, status_code=404)
+    jar = _inspect_sessions[engine].cookies
+    if not len(jar):
+        return {"ok": False, "msg": "当前没有捕获到任何 cookie，请先在检查页面里完成验证"}
+    cookie_str = "; ".join(f"{c.name}={c.value}" for c in jar)
+    field = "javbus_cookie" if engine == "javbus" else "javdb_cookie"
+    cfgmod.update_config(**{field: cookie_str})
+    _add_log("已保存 {} 的验证 cookie（{} 项），刮削器将在下次任务中生效".format(engine, len(jar)))
+    return {"ok": True, "field": field, "count": len(jar)}
+
+
 @app.on_event("startup")
 def _on_startup():
     cfg = cfgmod.load_config()
@@ -313,16 +429,17 @@ def _make_engines(cfg):
     """按配置创建主/备刮削引擎，返回 (primary, backup, primary_name, backup_name)。
     代理按引擎独立配置：留空=直连，填写=只走代理。"""
     engine = (cfg.get("engine") or "javbus").strip().lower()
-    cookie = cfg.get("javdb_cookie", "")
+    cookie_jb = cfg.get("javbus_cookie", "")
+    cookie_db = cfg.get("javdb_cookie", "")
     px_jb = cfg.get("proxy_javbus", "")
-    px_db = cfg.get("proxy_javdb", "")
+    px_javdb = cfg.get("proxy_javdb", "")
     fb = bool(cfg.get("engine_fallback", True))
     if engine == "javdb":
-        primary = scraper.JavdbScraper(cookie=cookie, proxy=px_db)
-        backup = scraper.JavBusScraper(cookie=cookie, proxy=px_jb) if fb else None
+        primary = scraper.JavdbScraper(cookie=cookie_db, proxy=px_javdb)
+        backup = scraper.JavBusScraper(cookie=cookie_jb, proxy=px_jb) if fb else None
         return primary, backup, "javdb", "javbus"
-    primary = scraper.JavBusScraper(cookie=cookie, proxy=px_jb)
-    backup = scraper.JavdbScraper(cookie=cookie, proxy=px_db) if fb else None
+    primary = scraper.JavBusScraper(cookie=cookie_jb, proxy=px_jb)
+    backup = scraper.JavdbScraper(cookie=cookie_db, proxy=px_javdb) if fb else None
     return primary, backup, "javbus", "javdb"
 
 
