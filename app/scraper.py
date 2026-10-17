@@ -365,27 +365,40 @@ class JavBusScraper:
 
     def scrape(self, dvdid):
         """完整刮削一个番号，返回详情 dict 或 None"""
-        url, title, _ = self.search(dvdid)
+        url, title, thumb = self.search(dvdid)
         if not url:
             log.warning("%s: javbus 未找到", dvdid)
             return None
         data = self.detail(url)
         if data and not data.get("title"):
             data["title"] = title or dvdid
+        if data:
+            # 搜索结果页的竖版小图（/pics/thumb/xxx.jpg）就是 DVD 正面海报，直接用作 poster
+            if thumb:
+                data["poster_url"] = thumb if thumb.startswith("http") else self.base + thumb
         return data
 
     def download_images(self, data, fanart_path, poster_path):
-        """javbus：fanart = 无水印横版大封面；poster = 右半边裁切（DVD 盒正面，竖版无水印）"""
+        """javbus：fanart = 无水印横版大封面；poster = 搜索页竖版小图（DVD 正面）。
+        竖版小图缺失/下载失败时回退为横版大图右半边裁切。"""
         fanart_ok = poster_ok = False
         if data.get("fanart"):
             try:
                 with open(fanart_path, "wb") as f:
                     f.write(self._get_bytes(data["fanart"]))
                 fanart_ok = True
-                crop_right_half(fanart_path, poster_path)
-                poster_ok = True
             except Exception as e:
                 log.warning("javbus 封面下载失败: %s", e)
+        if data.get("poster_url"):
+            try:
+                with open(poster_path, "wb") as f:
+                    f.write(self._get_bytes(data["poster_url"]))
+                poster_ok = True
+            except Exception as e:
+                log.warning("javbus 竖版海报下载失败: %s", e)
+        if not poster_ok and fanart_ok:
+            crop_right_half(fanart_path, poster_path)
+            poster_ok = True
         return fanart_ok, poster_ok
 
 
