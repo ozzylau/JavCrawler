@@ -416,6 +416,16 @@ def _run_scrape(cfg, force=False):
                                 _add_log("  · 已从 javdb 补抓中文标题")
                         except Exception as te:
                             _add_log("  ! javdb 中文标题补抓失败: {}".format(te))
+                    # 演员头像：默认 NFO 直接用采集源 URL；勾选"缓存到本地"则下载到电影目录（演员名.jpg），
+                    # NFO 的 thumb 改用本地文件名（需在生成 NFO 前完成）
+                    if cfg.get("actor_thumbs_local"):
+                        try:
+                            local_map = scraper.download_actor_thumbs(s, data, m["file"])
+                            if local_map:
+                                d2["actor_thumbs"] = local_map
+                                _add_log("  · 已缓存 {} 张演员头像到电影目录".format(len(local_map)))
+                        except Exception as ae:
+                            _add_log("  ! 演员头像缓存失败（不影响 NFO）: {}".format(ae))
                     scraper.generate_nfo(m["dvdid"], d2, nfo_path,
                                          poster_name=os.path.basename(poster_path),
                                          fanart_name=os.path.basename(fanart_path))
@@ -428,13 +438,6 @@ def _run_scrape(cfg, force=False):
                             _add_log("  ! 海报获取失败（不影响 NFO）")
                     except Exception as ce:
                         _add_log("  ! 封面下载失败（不影响 NFO）: {}".format(ce))
-                    # 演员头像：NFO 内写入 thumb 链接 + 下载到 .actors/ 目录（Kodi/Emby/Jellyfin 通用）
-                    try:
-                        n_thumb = scraper.download_actor_thumbs(s, data, m["file"])
-                        if n_thumb:
-                            _add_log("  · 已下载 {} 张演员头像".format(n_thumb))
-                    except Exception as ae:
-                        _add_log("  ! 演员头像下载失败（不影响 NFO）: {}".format(ae))
                     store.set_movie(m["file"], m["dvdid"], "success")
                     if _ensure_folder_poster(m["file"]):
                         _add_log("  ✓ 已生成文件夹海报: poster.jpg")

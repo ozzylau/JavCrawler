@@ -13,6 +13,7 @@ DEFAULTS = {
     "engine_fallback": True,                  # 主引擎未找到番号时用另一引擎补抓
     "timezone": "Asia/Shanghai",              # 时区（定时任务与日志按此时区）
     "use_chinese_title": False,               # True: title 用 javdb 中文翻译, originaltitle 用原始标题
+    "actor_thumbs_local": False,              # True: 演员头像下载到电影目录(演员名.jpg)，NFO 用本地文件；False: NFO 用采集源头像 URL
     "auto_schedule": {                        # 定时自动刮削
         "enabled": False,
         "mode": "daily",                      # daily=每天固定时间 / interval=每 N 小时

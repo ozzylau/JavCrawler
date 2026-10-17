@@ -415,32 +415,28 @@ def _safe_filename(name):
 
 
 def download_actor_thumbs(engine, data, video_file):
-    """下载演员头像到视频同目录 .actors/演员名.jpg（Kodi/Emby/Jellyfin 通用约定）。
-    已存在则跳过；单张失败只记日志，不影响主流程。返回成功数量。"""
+    """开启本地缓存时使用：下载演员头像到电影目录（演员名.jpg）。
+    已存在则跳过；单张失败只记日志。返回 {演员名: 文件名}（供 NFO 引用本地文件）。"""
     thumbs = data.get("actor_thumbs") or {}
     if not thumbs:
-        return 0
-    dirpath = os.path.join(os.path.dirname(video_file), ".actors")
-    try:
-        os.makedirs(dirpath, exist_ok=True)
-    except OSError as e:
-        log.warning("创建 .actors 目录失败: %s", e)
-        return 0
-    ok = 0
+        return {}
+    dirpath = os.path.dirname(video_file)
+    result = {}
     for name, url in thumbs.items():
-        fn = os.path.join(dirpath, _safe_filename(name) + ".jpg")
-        if os.path.exists(fn) and os.path.getsize(fn) > 0:
-            ok += 1
-            continue
-        try:
-            b = engine._get_bytes(url)
-            if b:
-                with open(fn, "wb") as f:
+        fn = _safe_filename(name) + ".jpg"
+        path = os.path.join(dirpath, fn)
+        if not (os.path.exists(path) and os.path.getsize(path) > 0):
+            try:
+                b = engine._get_bytes(url)
+                if not b:
+                    continue
+                with open(path, "wb") as f:
                     f.write(b)
-                ok += 1
-        except Exception as e:
-            log.warning("演员头像下载失败 %s: %s", name, e)
-    return ok
+            except Exception as e:
+                log.warning("演员头像下载失败 %s: %s", name, e)
+                continue
+        result[name] = fn
+    return result
 
 
 def jpg_dimensions(data):
@@ -489,7 +485,12 @@ def generate_nfo(dvdid, data, out_path, poster_name="poster.jpg", fanart_name="f
     movie = ET.Element("movie")
     title = data.get("title") or dvdid
     original = data.get("title_original") or title
-    ET.SubElement(movie, "title").text = f"{dvdid} {safe_name(title)}".strip()
+    # 采集源标题（javdb/javbus）通常已含番号前缀，避免重复；没有时才补
+    t = safe_name(title)
+    if t.upper().startswith(dvdid.upper()):
+        ET.SubElement(movie, "title").text = t
+    else:
+        ET.SubElement(movie, "title").text = f"{dvdid} {t}".strip()
     ET.SubElement(movie, "originaltitle").text = safe_name(original)
     ET.SubElement(movie, "sorttitle").text = dvdid
     ET.SubElement(movie, "uniqueid", {"type": "javdb", "default": "true"}).text = dvdid
