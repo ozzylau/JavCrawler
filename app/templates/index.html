@@ -138,8 +138,6 @@
     <div class="checkbox"><input type="checkbox" id="engineFallback" checked><span>主引擎未找到番号时，自动用另一引擎补抓（推荐开启）</span></div>
     <div class="checkbox"><input type="checkbox" id="useCnTitle"><span>刮削电影中文名（如有）— 开启后 NFO 的 title 用中文翻译，originaltitle 保留原始标题；关闭时 title 直接用原始标题（默认关闭；JavDB 主引擎用自带翻译，JavBus 主引擎会自动向 JavDB 补抓中文标题，补抓失败不影响刮削）</span></div>
     <div class="checkbox"><input type="checkbox" id="actorThumbsLocal"><span>演员头像缓存到本地 — 勾选后演员头像图片下载到视频同目录 .actors/ 文件夹（演员名.jpg），NFO 使用本地文件；不勾选时 NFO 直接使用采集源的头像链接（默认关闭）。注意：勾选后 Infuse 加载会不正常，Infuse 用户建议保持关闭</span></div>
-    <label>javdb Cookie（可选 — 正常情况无需填写；只有被反爬拦截(403/503)时才需要）</label>
-    <input id="javdb_cookie" placeholder="留空即可；如需填写：浏览器登录 javdb.com → F12 → 网络请求头复制整段 Cookie">
     <label>网络代理（两个引擎相互独立：留空 = 直连；填写后只走代理，不会回退直连。默认都不填）</label>
     <div class="proxy-group">
       <div class="pg-title">🅙 JavBus 代理</div>
@@ -264,7 +262,7 @@
   </div>
 
   <div class="card">
-    <h2>🧪 反爬验证检查（实验性）</h2>
+    <h2>🧪 实验室功能：反爬验证检查</h2>
     <div class="hint" style="margin-bottom:10px">当刮削日志出现「请求失败 / 被拦截 / 超时」时，可能是采集源触发了反爬验证（验证码、人机答题等）。点击按钮在页面内打开对应站点的内嵌浏览器，人工完成验证后，点「保存 Cookie 并应用到刮削器」，刮削器下次任务会带上验证后的 cookie。注意：实验性功能——内嵌页面样式/部分资源可能显示不完整，不影响完成验证；已配置代理时本检查不走代理（直连）。</div>
     <div class="row">
       <button onclick="openInspect('javbus')">🔎 检查 JavBus</button>
@@ -324,7 +322,6 @@ async function loadCfg() {
   const r = await fetch('/api/config');
   const c = await r.json();
   cfgDirs = c.input_directories || [];
-  document.getElementById('javdb_cookie').value = c.javdb_cookie || '';
   document.getElementById('useCnTitle').checked = !!c.use_chinese_title;
   document.getElementById('actorThumbsLocal').checked = !!c.actor_thumbs_local;
   document.getElementById('engineSel').value = (c.engine === 'javdb') ? 'javdb' : 'javbus';
@@ -361,7 +358,6 @@ function removeDir(i) {
 async function saveCfg(silent) {
   const payload = {
     input_directories: cfgDirs,
-    javdb_cookie: document.getElementById('javdb_cookie').value,
     use_chinese_title: document.getElementById('useCnTitle').checked,
     actor_thumbs_local: document.getElementById('actorThumbsLocal').checked,
     engine: document.getElementById('engineSel').value || 'javbus',
