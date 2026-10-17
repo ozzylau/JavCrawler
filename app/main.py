@@ -434,6 +434,27 @@ def inspect_save_cookies(engine: str):
     return {"ok": True, "field": field, "count": len(jar)}
 
 
+def _confirm_javdb_age():
+    """javdb 对新会话渲染「年滿 18 歲」服务端确认 modal（/over18?respond=1&rurl=...）。
+    自动替用户完成一次确认（作用于检查会话），之后内嵌浏览器不会再被年龄弹窗挡住，
+    也不会因点击确认链接跳错页面。"""
+    sess = _inspect_sessions["javdb"]
+    cfg = cfgmod.load_config()
+    proxy_url = (cfg.get("proxy_javdb") or "").strip()
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    try:
+        r = sess.get("https://javdb.com/", proxies=proxies, timeout=15)
+        if "over18-modal" not in r.text:
+            return
+        m = re.search(r'href="(/over18\?respond=[^"]+)"', r.text)
+        if m:
+            sess.get("https://javdb.com" + m.group(1).replace("&amp;", "&"),
+                     proxies=proxies, timeout=15)
+            log.info("javdb 年龄确认已自动完成")
+    except Exception as e:
+        log.warning("javdb 年龄确认自动处理失败(可在内嵌页面手动点击): %s", e)
+
+
 @app.get("/api/inspect-open/{engine}/{keyword}")
 def inspect_open(engine: str, keyword: str):
     """实验室检查器入口：解析番号详情页并 302 到检查代理路径，
@@ -446,6 +467,7 @@ def inspect_open(engine: str, keyword: str):
         return RedirectResponse(f"/api/inspect/{engine}/", status_code=302)
     if engine == "javbus":
         return RedirectResponse(f"/api/inspect/javbus/{urllib.parse.quote(kw)}", status_code=302)
+    _confirm_javdb_age()
     cookie_str = "; ".join(f"{c.name}={c.value}" for c in _inspect_sessions[engine].cookies)
     cfg = cfgmod.load_config()
     proxy_url = (cfg.get("proxy_javdb") or "").strip()
