@@ -309,6 +309,21 @@ def _ensure_folder_poster(video_file):
         return False
 
 
+def _make_engines(cfg):
+    """按配置创建主/备刮削引擎，返回 (primary, backup, primary_name, backup_name)"""
+    engine = (cfg.get("engine") or "javbus").strip().lower()
+    cookie = cfg.get("javdb_cookie", "")
+    proxy = cfg.get("proxy", "")
+    fb = bool(cfg.get("engine_fallback", True))
+    if engine == "javdb":
+        primary = scraper.JavdbScraper(cookie=cookie, proxy=proxy)
+        backup = scraper.JavBusScraper(cookie=cookie, proxy=proxy) if fb else None
+        return primary, backup, "javdb", "javbus"
+    primary = scraper.JavBusScraper(cookie=cookie, proxy=proxy)
+    backup = scraper.JavdbScraper(cookie=cookie, proxy=proxy) if fb else None
+    return primary, backup, "javbus", "javdb"
+
+
 def _run_scrape(cfg, force=False):
     try:
         dirs = [d for d in (cfg.get("input_directories") or []) if d and os.path.isdir(d)]
@@ -346,8 +361,11 @@ def _run_scrape(cfg, force=False):
 
         ok = fail = 0
         if targets:
-            s = scraper.JavdbScraper(cookie=cfg.get("javdb_cookie", ""),
-                                     proxy=cfg.get("proxy", ""))
+            primary, backup, p_name, b_name = _make_engines(cfg)
+            if backup:
+                _add_log("刮削引擎: {}（备用: {}）".format(p_name, b_name))
+            else:
+                _add_log("刮削引擎: {}（未启用备用）".format(p_name))
             for idx, m in enumerate(targets, 1):
                 if _state["cancel"]:
                     _add_log("已取消")
@@ -359,9 +377,20 @@ def _run_scrape(cfg, force=False):
                 poster_path = scraper.poster_path_for(m["file"])
                 fanart_path = scraper.fanart_path_for(m["file"])
                 try:
-                    data = s.scrape(m["dvdid"])
+                    try:
+                        s, data = primary, primary.scrape(m["dvdid"])
+                    except Exception as pe:
+                        s, data = primary, None
+                        _add_log("  · 主引擎 {} 请求异常: {}".format(p_name, pe))
+                    if not data and backup:
+                        _add_log("  · {} 未找到，改用 {} 补抓".format(p_name, b_name))
+                        try:
+                            s, data = backup, backup.scrape(m["dvdid"])
+                        except Exception as be:
+                            s, data = backup, None
+                            _add_log("  · 备用引擎 {} 请求异常: {}".format(b_name, be))
                     if not data or not data.get("title"):
-                        raise RuntimeError("javdb 未找到该番号或数据不完整")
+                        raise RuntimeError("{} 未找到该番号或数据不完整".format(p_name))
                     # 标题选择：默认用原始标题；开启中文选项且 javdb 有翻译时 title=中文、originaltitle=原始
                     d2 = dict(data)
                     d2["title_original"] = data.get("title") or m["dvdid"]

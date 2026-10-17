@@ -223,6 +223,150 @@ class JavdbScraper:
         return fanart_ok, poster_ok
 
 
+class JavBusScraper:
+    """javbus 刮削器：封面无水印、资料齐全。
+    网络：多数网络可直连 javbus，因此先直连；失败且配置了代理时自动改走代理重试。"""
+
+    def __init__(self, cookie="", proxy="", timeout=30):
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": UA,
+            "Accept-Language": "zh-CN,zh;q=0.9,zh-TW;q=0.8,ja;q=0.5,en;q=0.6",
+            "Referer": "https://www.javbus.com/",
+        })
+        if cookie:
+            self.session.headers["Cookie"] = cookie.strip()
+        self.proxy = proxy.strip() or None
+        self.timeout = timeout
+        self.base = "https://www.javbus.com"
+
+    def _proxies(self):
+        if self.proxy:
+            return {"http": self.proxy, "https": self.proxy}
+        return None
+
+    def _get(self, url):
+        try:
+            r = self.session.get(url, timeout=self.timeout)
+            if r.status_code == 200:
+                return r
+        except Exception:
+            pass
+        if self.proxy:
+            r = self.session.get(url, proxies=self._proxies(), timeout=self.timeout)
+            if r.status_code == 200:
+                return r
+        raise RuntimeError("javbus 请求失败: {}".format(url))
+
+    def _get_bytes(self, url):
+        return self._get(url).content
+
+    def _panel(self, tree, *names):
+        """读取信息面板字段。返回字符串或链接列表"""
+        for sp in tree.xpath("//span[@class='header']"):
+            ht = (sp.text or "").strip().rstrip(":：")
+            if ht in names:
+                p = sp.getparent()
+                links = [a.text_content().strip() for a in p.xpath(".//a") if a.text_content().strip()]
+                if links:
+                    return links
+                txt = p.text_content().strip()
+                for sep in (":", "："):
+                    if sep in txt:
+                        txt = txt.split(sep, 1)[-1].strip()
+                return txt
+        return ""
+
+    def _panel_val(self, tree, *names):
+        """读取面板字段，统一转为字符串（链接则用空格连接）"""
+        v = self._panel(tree, *names)
+        if isinstance(v, list):
+            v = " ".join(v)
+        return v or ""
+
+    def search(self, dvdid):
+        """搜索番号，返回 (url, 标题, 缩略图)。找不到或请求失败返回 (None, None, None)"""
+        try:
+            r = self._get("{}/search/{}&type=&parent=ce".format(self.base, dvdid))
+        except Exception as e:
+            log.warning("javbus 搜索请求失败 %s: %s", dvdid, e)
+            return None, None, None
+        tree = lxml_html.fromstring(r.content.decode("utf-8", "ignore"))
+        d = dvdid.upper().replace("FC2-PPV-", "FC2-")
+        for a in tree.xpath("//a[contains(@class,'movie-box')]"):
+            href = a.get("href", "")
+            vid = href.rstrip("/").split("/")[-1].upper().replace("FC2-PPV-", "FC2-")
+            if vid == d or d in vid:
+                img = a.xpath(".//img/@src") or a.xpath(".//img/@data-src")
+                title = (a.xpath(".//img/@title") or [""])[0]
+                return href, title, (img[0] if img else "")
+        return None, None, None
+
+    def detail(self, url):
+        """抓取影片详情"""
+        full = url if url.startswith("http") else self.base + url
+        r = self._get(full)
+        tree = lxml_html.fromstring(r.content.decode("utf-8", "ignore"))
+        data = {"url": full, "engine": "javbus"}
+
+        t = tree.xpath("//h3/text()")
+        data["title"] = (t[0].strip() if t else "").strip()
+        data["title_local"] = data["title"]  # javbus 只有原始标题，无中文翻译
+        c = tree.xpath("//a[@class='bigImage']/@href")
+        if c:
+            data["fanart"] = (self.base + c[0]) if c[0].startswith("/") else c[0]
+        else:
+            data["fanart"] = ""
+
+        data["dvdid"] = self._panel_val(tree, "識別碼", "识别码")
+        data["date"] = self._panel_val(tree, "發行日期", "发行日期")
+        dur = self._panel_val(tree, "長度", "长度")
+        data["duration"] = re.sub(r"\D", "", dur) if dur else ""
+        data["director"] = self._panel_val(tree, "導演", "导演")
+        data["maker"] = self._panel_val(tree, "製作商", "制作商")
+        seen, genres = set(), []
+        for g in tree.xpath("//a[contains(@href,'/genre/')]"):
+            g = g.text_content().strip()
+            if g and g not in seen:
+                seen.add(g)
+                genres.append(g)
+        data["genres"] = genres
+
+        actors = [a.strip() for a in tree.xpath("//div[contains(@class,'star-name')]//a/text()") if a.strip()]
+        if not actors:
+            actors = [a.strip() for a in tree.xpath("//a[contains(@href,'/star/')]/text()") if a.strip()]
+        data["actors"] = actors
+        data["plot"] = ""      # javbus 无剧情简介
+        data["score"] = ""
+        data["previews"] = tree.xpath("//a[@class='sample-box']/@href")
+        return data
+
+    def scrape(self, dvdid):
+        """完整刮削一个番号，返回详情 dict 或 None"""
+        url, title, _ = self.search(dvdid)
+        if not url:
+            log.warning("%s: javbus 未找到", dvdid)
+            return None
+        data = self.detail(url)
+        if data and not data.get("title"):
+            data["title"] = title or dvdid
+        return data
+
+    def download_images(self, data, fanart_path, poster_path):
+        """javbus：fanart = 无水印横版大封面；poster = 右半边裁切（DVD 盒正面，竖版无水印）"""
+        fanart_ok = poster_ok = False
+        if data.get("fanart"):
+            try:
+                with open(fanart_path, "wb") as f:
+                    f.write(self._get_bytes(data["fanart"]))
+                fanart_ok = True
+                crop_right_half(fanart_path, poster_path)
+                poster_ok = True
+            except Exception as e:
+                log.warning("javbus 封面下载失败: %s", e)
+        return fanart_ok, poster_ok
+
+
 def nfo_path_for(video_file):
     """与视频同名的 NFO：/path/Movie.mp4 -> /path/Movie.nfo（Emby/Jellyfin/Kodi/Infuse 均支持）"""
     return os.path.splitext(video_file)[0] + ".nfo"
