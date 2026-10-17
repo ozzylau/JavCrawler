@@ -428,6 +428,13 @@ def _run_scrape(cfg, force=False):
                             _add_log("  ! 海报获取失败（不影响 NFO）")
                     except Exception as ce:
                         _add_log("  ! 封面下载失败（不影响 NFO）: {}".format(ce))
+                    # 演员头像：NFO 内写入 thumb 链接 + 下载到 .actors/ 目录（Kodi/Emby/Jellyfin 通用）
+                    try:
+                        n_thumb = scraper.download_actor_thumbs(s, data, m["file"])
+                        if n_thumb:
+                            _add_log("  · 已下载 {} 张演员头像".format(n_thumb))
+                    except Exception as ae:
+                        _add_log("  ! 演员头像下载失败（不影响 NFO）: {}".format(ae))
                     store.set_movie(m["file"], m["dvdid"], "success")
                     if _ensure_folder_poster(m["file"]):
                         _add_log("  ✓ 已生成文件夹海报: poster.jpg")

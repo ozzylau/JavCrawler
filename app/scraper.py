@@ -135,6 +135,17 @@ class JavdbScraper:
             data["actors"] = act if act else list(names)
         else:
             data["actors"] = []
+        # 演员头像（登录后页面有 avatar-box；未登录 javdb 不渲染该区块，则为空）
+        thumbs = {}
+        for a in tree.xpath("//a[contains(@class,'avatar-box')]"):
+            name = "".join(a.xpath(".//span[contains(@class,'cast-name')]//text()")).strip()
+            img = a.xpath(".//img/@src") or a.xpath(".//img/@data-src")
+            if name and img:
+                u = img[0]
+                if u.startswith("/"):
+                    u = self.base + u
+                thumbs[name] = u
+        data["actor_thumbs"] = thumbs
 
         p = tree.xpath("//nav[contains(@class,'movie-panel-info')]//div[contains(@class,'message-body')]/p//text()")
         data["plot"] = "".join(p).strip() if p else ""
@@ -330,10 +341,23 @@ class JavBusScraper:
                 genres.append(g)
         data["genres"] = genres
 
-        actors = [a.strip() for a in tree.xpath("//div[contains(@class,'star-name')]//a/text()") if a.strip()]
+        # 演员：star-name 所在 li 内含头像 img（/pics/actress/xxx.jpg）
+        actors, thumbs = [], {}
+        for li in tree.xpath("//div[contains(@class,'star-name')]/ancestor::li"):
+            name = "".join(li.xpath(".//div[contains(@class,'star-name')]//text()")).strip()
+            img = li.xpath(".//img/@src") or li.xpath(".//img/@data-src")
+            if not name:
+                continue
+            actors.append(name)
+            if img:
+                u = img[0]
+                if u.startswith("/"):
+                    u = self.base + u
+                thumbs[name] = u
         if not actors:
             actors = [a.strip() for a in tree.xpath("//a[contains(@href,'/star/')]/text()") if a.strip()]
         data["actors"] = actors
+        data["actor_thumbs"] = thumbs
         data["plot"] = ""      # javbus 无剧情简介
         data["score"] = ""
         data["previews"] = tree.xpath("//a[@class='sample-box']/@href")
@@ -383,6 +407,40 @@ def fanart_path_for(video_file):
 def is_scraped(video_file):
     """判断影片是否已刮削：存在与视频完全同名的 .nfo"""
     return os.path.exists(nfo_path_for(video_file))
+
+
+def _safe_filename(name):
+    """演员名转安全文件名"""
+    return re.sub(r'[\\/:*?"<>|]', "_", name).strip() or "actor"
+
+
+def download_actor_thumbs(engine, data, video_file):
+    """下载演员头像到视频同目录 .actors/演员名.jpg（Kodi/Emby/Jellyfin 通用约定）。
+    已存在则跳过；单张失败只记日志，不影响主流程。返回成功数量。"""
+    thumbs = data.get("actor_thumbs") or {}
+    if not thumbs:
+        return 0
+    dirpath = os.path.join(os.path.dirname(video_file), ".actors")
+    try:
+        os.makedirs(dirpath, exist_ok=True)
+    except OSError as e:
+        log.warning("创建 .actors 目录失败: %s", e)
+        return 0
+    ok = 0
+    for name, url in thumbs.items():
+        fn = os.path.join(dirpath, _safe_filename(name) + ".jpg")
+        if os.path.exists(fn) and os.path.getsize(fn) > 0:
+            ok += 1
+            continue
+        try:
+            b = engine._get_bytes(url)
+            if b:
+                with open(fn, "wb") as f:
+                    f.write(b)
+                ok += 1
+        except Exception as e:
+            log.warning("演员头像下载失败 %s: %s", name, e)
+    return ok
 
 
 def jpg_dimensions(data):
@@ -445,9 +503,15 @@ def generate_nfo(dvdid, data, out_path, poster_name="poster.jpg", fanart_name="f
         ET.SubElement(movie, "outline").text = data["plot"]
     for g in data.get("genres", []):
         ET.SubElement(movie, "genre").text = g
+    thumbs = data.get("actor_thumbs") or {}
     for a in data.get("actors", []):
+        name = a.get("name") if isinstance(a, dict) else a
         actor = ET.SubElement(movie, "actor")
-        ET.SubElement(actor, "name").text = a
+        ET.SubElement(actor, "name").text = name
+        ET.SubElement(actor, "type").text = "Actor"
+        thumb = (a.get("thumb") if isinstance(a, dict) else None) or thumbs.get(name)
+        if thumb:
+            ET.SubElement(actor, "thumb").text = thumb
     if data.get("maker"):
         ET.SubElement(movie, "studio").text = data["maker"]
     if data.get("director"):
