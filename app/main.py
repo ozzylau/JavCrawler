@@ -416,14 +416,14 @@ def _run_scrape(cfg, force=False):
                                 _add_log("  · 已从 javdb 补抓中文标题")
                         except Exception as te:
                             _add_log("  ! javdb 中文标题补抓失败: {}".format(te))
-                    # 演员头像：默认 NFO 直接用采集源 URL；勾选"缓存到本地"则下载到电影目录（演员名.jpg），
-                    # NFO 的 thumb 改用本地文件名（需在生成 NFO 前完成）
+                    # 演员头像：默认 NFO 直接用采集源 URL；勾选"缓存到本地"则下载到视频同目录 .actors/（演员名.jpg），
+                    # NFO 的 thumb 改用本地相对路径 .actors/文件名（需在生成 NFO 前完成）
                     if cfg.get("actor_thumbs_local"):
                         try:
                             local_map = scraper.download_actor_thumbs(s, data, m["file"])
                             if local_map:
                                 d2["actor_thumbs"] = local_map
-                                _add_log("  · 已缓存 {} 张演员头像到电影目录".format(len(local_map)))
+                                _add_log("  · 已缓存 {} 张演员头像到 .actors/ 目录".format(len(local_map)))
                         except Exception as ae:
                             _add_log("  ! 演员头像缓存失败（不影响 NFO）: {}".format(ae))
                     scraper.generate_nfo(m["dvdid"], d2, nfo_path,
