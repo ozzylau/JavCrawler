@@ -586,12 +586,16 @@ function openInspect(engine, kw) {
   kw = (kw || 'SSIS-129').trim() || 'SSIS-129';
   document.getElementById('modalTitle').textContent = '🧪 ' + names[engine] + ' 反爬验证检查';
   document.getElementById('modalBox').style.maxWidth = '1150px';
+  const loginTip = engine === 'javdb'
+    ? '<div style="color:#f85149; font-size:12.5px; margin-bottom:8px">⚠️ JavDB 存在用户登录功能，建议你点击网页上方几个按钮中右上角的「登入」按钮，登录自己的用户，然后点下方「保存 Cookie 并应用到刮削器」把 Cookie 保存到程序中（登录后刮削数据更全：演员头像、评分、简介等）。</div>'
+    : '';
   document.getElementById('modalBody').innerHTML = `
     <div style="font-size:13px;color:#8a93a5;margin-bottom:8px">
       左侧为通过本服务代理访问的 ${names[engine]} 页面（与刮削器使用相同的网络与 Cookie 配置），默认直接打开采集流程实际访问的番号详情页；
       修改番号后点「📍 打开页面」可刷新左侧页面。如果出现验证码 / 人机答题，请在页面内完成验证，然后点「保存 Cookie 并应用到刮削器」。
       右侧「验证抓取」仅预览整理出的 NFO 元数据，不写入影片目录。
     </div>
+    ${loginTip}
     <div style="display:flex; gap:12px; align-items:stretch">
       <div style="flex:1.3; min-width:0">
         <div style="font-size:12px;color:#8a93a5;margin-bottom:4px">🌐 内嵌浏览器（番号详情页）</div>
