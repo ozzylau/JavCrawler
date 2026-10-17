@@ -322,13 +322,22 @@ async def inspect_proxy(engine: str, path: str, request: Request):
     fwd_headers = {k: v for k, v in request.headers.items()
                    if k.lower() not in _HOP_HEADERS and k.lower() not in ("cookie", "accept-encoding")}
     body = await request.body() if request.method in ("POST", "PUT") else None
+    # 与刮削器一致：使用引擎配置的代理（服务器直连站点往往不通）
+    cfg = cfgmod.load_config()
+    proxy_url = (cfg.get("proxy_javbus") or "").strip() if engine == "javbus" else (cfg.get("proxy_javdb") or "").strip()
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     try:
         from starlette.concurrency import run_in_threadpool
         resp = await run_in_threadpool(
             lambda: sess.request(request.method, url, headers=fwd_headers, data=body,
-                                 allow_redirects=False, timeout=30))
+                                 proxies=proxies, allow_redirects=False, timeout=15))
     except Exception as e:
-        return JSONResponse({"error": f"请求失败: {e}"}, status_code=502)
+        # 返回可读的 HTML 错误页（iframe 内可见），而非裸 JSON
+        msg = f"通过{'代理 ' + proxy_url if proxy_url else '直连'}请求 {base} 失败：{e}"
+        html = (f'<html><body style="font-family:sans-serif;padding:24px;color:#c0392b">'
+                f'<h3>检查代理请求失败</h3><p style="word-break:break-all">{msg}</p>'
+                f'<p style="color:#555">请检查「数据源设置」里该引擎的代理配置是否正确，保存后重试。</p></body></html>')
+        return HTMLResponse(html, status_code=502)
     out_headers = {}
     for k, v in resp.headers.items():
         if k.lower() in ("content-encoding", "content-length", "transfer-encoding", "connection",

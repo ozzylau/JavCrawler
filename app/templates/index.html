@@ -191,6 +191,14 @@
       <button onclick="saveCfg()">💾 保存配置</button>
       <button class="secondary" onclick="loadCfg()">刷新</button>
     </div>
+    <div style="margin-top:16px; border-top:1px solid #2a3040; padding-top:14px;">
+      <h2 style="font-size:14px">🧪 实验室功能：反爬验证检查</h2>
+      <div class="hint" style="margin-bottom:10px">当刮削日志出现「请求失败 / 被拦截 / 超时」时，可能是采集源触发了反爬验证（验证码、人机答题等）。点击按钮在页面内打开对应站点的内嵌浏览器（与刮削器使用相同的网络配置），人工完成验证后，点「保存 Cookie 并应用到刮削器」。注意：实验性功能——内嵌页面样式/部分资源可能显示不完整，不影响完成验证。</div>
+      <div class="row">
+        <button onclick="openInspect('javbus')">🔎 检查 JavBus</button>
+        <button onclick="openInspect('javdb')">🔎 检查 JavDB</button>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -258,15 +266,6 @@
     <div id="result"></div>
     <div style="margin-top:14px;"><label>本次运行日志</label>
       <div id="log" class="log">暂无日志</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>🧪 实验室功能：反爬验证检查</h2>
-    <div class="hint" style="margin-bottom:10px">当刮削日志出现「请求失败 / 被拦截 / 超时」时，可能是采集源触发了反爬验证（验证码、人机答题等）。点击按钮在页面内打开对应站点的内嵌浏览器，人工完成验证后，点「保存 Cookie 并应用到刮削器」，刮削器下次任务会带上验证后的 cookie。注意：实验性功能——内嵌页面样式/部分资源可能显示不完整，不影响完成验证；已配置代理时本检查不走代理（直连）。</div>
-    <div class="row">
-      <button onclick="openInspect('javbus')">🔎 检查 JavBus</button>
-      <button onclick="openInspect('javdb')">🔎 检查 JavDB</button>
     </div>
   </div>
 
