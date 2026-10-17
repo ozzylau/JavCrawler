@@ -225,7 +225,7 @@ class JavdbScraper:
 
 class JavBusScraper:
     """javbus 刮削器：封面无水印、资料齐全。
-    网络：多数网络可直连 javbus，因此先直连；失败且配置了代理时自动改走代理重试。"""
+    网络：未配置代理时直连；配置了代理则只走代理（不回退直连），选择权交给用户。"""
 
     def __init__(self, cookie="", proxy="", timeout=30):
         self.session = requests.Session()
@@ -246,17 +246,15 @@ class JavBusScraper:
         return None
 
     def _get(self, url):
-        try:
-            r = self.session.get(url, timeout=self.timeout)
-            if r.status_code == 200:
-                return r
-        except Exception:
-            pass
         if self.proxy:
             r = self.session.get(url, proxies=self._proxies(), timeout=self.timeout)
             if r.status_code == 200:
                 return r
-        raise RuntimeError("javbus 请求失败: {}".format(url))
+            raise RuntimeError("javbus 经代理请求失败(HTTP {}): {}".format(r.status_code, url))
+        r = self.session.get(url, timeout=self.timeout)
+        if r.status_code == 200:
+            return r
+        raise RuntimeError("javbus 请求失败(HTTP {}): {}".format(r.status_code, url))
 
     def _get_bytes(self, url):
         return self._get(url).content

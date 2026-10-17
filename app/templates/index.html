@@ -77,6 +77,8 @@
   .pw-wrap input { padding-right: 36px; }
   .pw-wrap .eye { position: absolute; right: 10px; top: 8px; cursor: pointer; color: #8a93a5; font-size: 14px; user-select: none; line-height: 1; }
   .pw-wrap .eye:hover { color: #ffb454; }
+  .proxy-group { border: 1px solid #2a3040; border-radius: 8px; padding: 12px 14px 0; margin-bottom: 12px; }
+  .proxy-group .pg-title { font-size: 12.5px; color: #8a93a5; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -137,25 +139,52 @@
     <div class="checkbox"><input type="checkbox" id="useCnTitle"><span>刮削电影中文名（如有）— 开启后 NFO 的 title 用 javdb 中文翻译，originaltitle 保留原始标题；关闭时 title 直接用原始标题（默认关闭；仅 JavDB 有翻译，JavBus 始终为原始标题）</span></div>
     <label>javdb Cookie（可选 — 正常情况无需填写；只有被反爬拦截(403/503)时才需要）</label>
     <input id="javdb_cookie" placeholder="留空即可；如需填写：浏览器登录 javdb.com → F12 → 网络请求头复制整段 Cookie">
-    <label>HTTP 代理（可选 — JavBus 会先尝试直连，失败才走代理；JavDB 需要直连可用或代理）</label>
-    <div class="field2">
-      <div>
-        <label style="font-size:12px">IP 地址 或 域名</label>
-        <input id="px_host" placeholder="例如 192.168.100.2" style="margin-bottom:8px">
+    <label>网络代理（两个引擎相互独立：留空 = 直连；填写后只走代理，不会回退直连。默认都不填）</label>
+    <div class="proxy-group">
+      <div class="pg-title">🅙 JavBus 代理</div>
+      <div class="field2">
+        <div>
+          <label style="font-size:12px">IP 地址 或 域名</label>
+          <input id="jb_host" placeholder="例如 192.168.100.2（留空=直连）" style="margin-bottom:8px">
+        </div>
+        <div>
+          <label style="font-size:12px">端口</label>
+          <input id="jb_port" placeholder="例如 7890" style="margin-bottom:8px">
+        </div>
+        <div>
+          <label style="font-size:12px">用户名（没有就留空）</label>
+          <input id="jb_user" placeholder="可留空" autocomplete="off" style="margin-bottom:8px">
+        </div>
+        <div>
+          <label style="font-size:12px">密码（没有就留空）</label>
+          <div class="pw-wrap">
+            <input id="jb_pass" type="password" placeholder="可留空" autocomplete="new-password" style="margin-bottom:8px">
+            <span class="eye" id="jb_eye" onclick="togglePw('jb')" title="显示/隐藏密码">👁</span>
+          </div>
+        </div>
       </div>
-      <div>
-        <label style="font-size:12px">端口</label>
-        <input id="px_port" placeholder="例如 7890" style="margin-bottom:8px">
-      </div>
-      <div>
-        <label style="font-size:12px">用户名（没有就留空）</label>
-        <input id="px_user" placeholder="可留空" autocomplete="off" style="margin-bottom:8px">
-      </div>
-      <div>
-        <label style="font-size:12px">密码（没有就留空）</label>
-        <div class="pw-wrap">
-          <input id="px_pass" type="password" placeholder="可留空" autocomplete="new-password" style="margin-bottom:8px">
-          <span class="eye" id="px_eye" onclick="togglePw()" title="显示/隐藏密码">👁</span>
+    </div>
+    <div class="proxy-group">
+      <div class="pg-title">🅓 JavDB 代理</div>
+      <div class="field2">
+        <div>
+          <label style="font-size:12px">IP 地址 或 域名</label>
+          <input id="db_host" placeholder="例如 192.168.100.2（留空=直连）" style="margin-bottom:8px">
+        </div>
+        <div>
+          <label style="font-size:12px">端口</label>
+          <input id="db_port" placeholder="例如 7890" style="margin-bottom:8px">
+        </div>
+        <div>
+          <label style="font-size:12px">用户名（没有就留空）</label>
+          <input id="db_user" placeholder="可留空" autocomplete="off" style="margin-bottom:8px">
+        </div>
+        <div>
+          <label style="font-size:12px">密码（没有就留空）</label>
+          <div class="pw-wrap">
+            <input id="db_pass" type="password" placeholder="可留空" autocomplete="new-password" style="margin-bottom:8px">
+            <span class="eye" id="db_eye" onclick="togglePw('db')" title="显示/隐藏密码">👁</span>
+          </div>
         </div>
       </div>
     </div>
@@ -285,7 +314,8 @@ async function loadCfg() {
   document.getElementById('useCnTitle').checked = !!c.use_chinese_title;
   document.getElementById('engineSel').value = (c.engine === 'javdb') ? 'javdb' : 'javbus';
   document.getElementById('engineFallback').checked = c.engine_fallback !== false;
-  fillProxy(c.proxy || '');
+  fillProxy('jb', c.proxy_javbus || '');
+  fillProxy('db', c.proxy_javdb || '');
   const sch = c.auto_schedule || {};
   document.getElementById('schEnabled').checked = !!sch.enabled;
   document.getElementById('schMode').value = sch.mode || 'daily';
@@ -320,20 +350,21 @@ async function saveCfg(silent) {
     use_chinese_title: document.getElementById('useCnTitle').checked,
     engine: document.getElementById('engineSel').value || 'javbus',
     engine_fallback: document.getElementById('engineFallback').checked,
-    proxy: buildProxy()
+    proxy_javbus: buildProxy('jb'),
+    proxy_javdb: buildProxy('db')
   };
   await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
   if (!silent) alert('配置已保存');
   await loadStats();
 }
 
-/* ---------- 代理字段 <-> URL 互转 ---------- */
-function buildProxy() {
-  const host = document.getElementById('px_host').value.trim();
+/* ---------- 代理字段 <-> URL 互转（prefix: jb / db） ---------- */
+function buildProxy(prefix) {
+  const host = document.getElementById(prefix + '_host').value.trim();
   if (!host) return '';
-  const port = document.getElementById('px_port').value.trim();
-  const user = document.getElementById('px_user').value.trim();
-  const pass = document.getElementById('px_pass').value;
+  const port = document.getElementById(prefix + '_port').value.trim();
+  const user = document.getElementById(prefix + '_user').value.trim();
+  const pass = document.getElementById(prefix + '_pass').value;
   let auth = '';
   if (user) {
     auth = encodeURIComponent(user);
@@ -342,10 +373,10 @@ function buildProxy() {
   }
   return 'http://' + auth + host + (port ? ':' + port : '');
 }
-function fillProxy(url) {
+function fillProxy(prefix, url) {
   // 解析 http://[user[:pass]@]host[:port]
   let host = '', port = '', user = '', pass = '';
-  let rest = url.replace(/^https?:\/\//, '');
+  let rest = String(url || '').replace(/^https?:\/\//, '');
   if (rest.includes('@')) {
     const at = rest.indexOf('@');
     const auth = rest.slice(0, at);
@@ -357,16 +388,16 @@ function fillProxy(url) {
   const pi = rest.lastIndexOf(':');
   if (pi >= 0 && /^\d+$/.test(rest.slice(pi + 1))) { host = rest.slice(0, pi); port = rest.slice(pi + 1); }
   else { host = rest; }
-  document.getElementById('px_host').value = host;
-  document.getElementById('px_port').value = port;
-  document.getElementById('px_user').value = user;
-  document.getElementById('px_pass').value = pass;
+  document.getElementById(prefix + '_host').value = host;
+  document.getElementById(prefix + '_port').value = port;
+  document.getElementById(prefix + '_user').value = user;
+  document.getElementById(prefix + '_pass').value = pass;
 }
 function safeDecode(s) { try { return decodeURIComponent(s); } catch (e) { return s; } }
 
-function togglePw() {
-  const inp = document.getElementById('px_pass');
-  const eye = document.getElementById('px_eye');
+function togglePw(prefix) {
+  const inp = document.getElementById(prefix + '_pass');
+  const eye = document.getElementById(prefix + '_eye');
   const show = inp.type === 'password';
   inp.type = show ? 'text' : 'password';
   eye.textContent = show ? '🙈' : '👁';

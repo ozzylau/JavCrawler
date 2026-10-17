@@ -310,17 +310,19 @@ def _ensure_folder_poster(video_file):
 
 
 def _make_engines(cfg):
-    """按配置创建主/备刮削引擎，返回 (primary, backup, primary_name, backup_name)"""
+    """按配置创建主/备刮削引擎，返回 (primary, backup, primary_name, backup_name)。
+    代理按引擎独立配置：留空=直连，填写=只走代理。"""
     engine = (cfg.get("engine") or "javbus").strip().lower()
     cookie = cfg.get("javdb_cookie", "")
-    proxy = cfg.get("proxy", "")
+    px_jb = cfg.get("proxy_javbus", "")
+    px_db = cfg.get("proxy_javdb", "")
     fb = bool(cfg.get("engine_fallback", True))
     if engine == "javdb":
-        primary = scraper.JavdbScraper(cookie=cookie, proxy=proxy)
-        backup = scraper.JavBusScraper(cookie=cookie, proxy=proxy) if fb else None
+        primary = scraper.JavdbScraper(cookie=cookie, proxy=px_db)
+        backup = scraper.JavBusScraper(cookie=cookie, proxy=px_jb) if fb else None
         return primary, backup, "javdb", "javbus"
-    primary = scraper.JavBusScraper(cookie=cookie, proxy=proxy)
-    backup = scraper.JavdbScraper(cookie=cookie, proxy=proxy) if fb else None
+    primary = scraper.JavBusScraper(cookie=cookie, proxy=px_jb)
+    backup = scraper.JavdbScraper(cookie=cookie, proxy=px_db) if fb else None
     return primary, backup, "javbus", "javdb"
 
 

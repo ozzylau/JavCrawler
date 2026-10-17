@@ -7,7 +7,8 @@ CONFIG_PATH = os.environ.get("JAVCRAWLER_CONFIG", "/app/config.json")
 DEFAULTS = {
     "input_directories": [],                  # 刮削目录列表（可多个）
     "javdb_cookie": "",                       # javdb cookie（可选，被反爬拦截时配置）
-    "proxy": "",                              # http 代理（可选）
+    "proxy_javbus": "",                       # JavBus 代理（留空=直连；填写后只走代理，不回退直连）
+    "proxy_javdb": "",                        # JavDB 代理（留空=直连）
     "engine": "javbus",                       # 刮削引擎: javbus(默认) / javdb
     "engine_fallback": True,                  # 主引擎未找到番号时用另一引擎补抓
     "timezone": "Asia/Shanghai",              # 时区（定时任务与日志按此时区）
@@ -39,6 +40,11 @@ def load_config():
                 cfg[k].update(v)
             else:
                 cfg[k] = v
+    # 旧版单代理配置迁移：同时应用到两个引擎
+    legacy = saved.get("proxy") or ""
+    if legacy and not (cfg.get("proxy_javbus") or cfg.get("proxy_javdb")):
+        cfg["proxy_javbus"] = legacy
+        cfg["proxy_javdb"] = legacy
     # 目录去重、去空
     dirs = cfg.get("input_directories") or []
     seen, uniq = set(), []
