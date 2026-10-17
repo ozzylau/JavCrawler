@@ -10,7 +10,7 @@ import urllib.parse
 
 import requests
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from . import scraper, config as cfgmod, store
 
@@ -340,9 +340,15 @@ async def inspect_proxy(engine: str, path: str, request: Request):
     base = INSPECT_TARGETS[engine]
     qs = request.url.query
     url = f"{base}/{path}" + (f"?{qs}" if qs else "")
-    # cookie 由 session jar 管理（捕获 Set-Cookie），不透传浏览器 cookie
+    # cookie 由 session jar 管理（捕获 Set-Cookie），不透传浏览器 cookie。
+    # referer/origin 不能透传：浏览器带的是本服务地址，javbus 的图片 CDN 校验
+    # Referer 必须为本站，否则图片 403 裂图。统一补成本站 Referer。
     fwd_headers = {k: v for k, v in request.headers.items()
-                   if k.lower() not in _HOP_HEADERS and k.lower() not in ("cookie", "accept-encoding")}
+                   if k.lower() not in _HOP_HEADERS
+                   and k.lower() not in ("cookie", "accept-encoding", "referer", "origin")}
+    fwd_headers["Referer"] = base + "/"
+    if request.method in ("POST", "PUT"):
+        fwd_headers["Origin"] = base
     body = await request.body() if request.method in ("POST", "PUT") else None
     # 与刮削器一致：使用引擎配置的代理（服务器直连站点往往不通）
     cfg = cfgmod.load_config()
@@ -350,9 +356,16 @@ async def inspect_proxy(engine: str, path: str, request: Request):
     proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
     try:
         from starlette.concurrency import run_in_threadpool
-        resp = await run_in_threadpool(
-            lambda: sess.request(request.method, url, headers=fwd_headers, data=body,
-                                 proxies=proxies, allow_redirects=False, timeout=15))
+
+        def _do():
+            return sess.request(request.method, url, headers=fwd_headers, data=body,
+                                proxies=proxies, allow_redirects=False, timeout=15)
+
+        try:
+            resp = await run_in_threadpool(_do)
+        except Exception:
+            # 代理链路偶发 SSL 中断（SSLEOFError 等），重试一次
+            resp = await run_in_threadpool(_do)
     except Exception as e:
         # 返回可读的 HTML 错误页（iframe 内可见），而非裸 JSON
         msg = f"通过{'代理 ' + proxy_url if proxy_url else '直连'}请求 {base} 失败：{e}"
@@ -419,6 +432,33 @@ def inspect_save_cookies(engine: str):
     cfgmod.update_config(**{field: cookie_str})
     _add_log("已保存 {} 的验证 cookie（{} 项），刮削器将在下次任务中生效".format(engine, len(jar)))
     return {"ok": True, "field": field, "count": len(jar)}
+
+
+@app.get("/api/inspect-open/{engine}/{keyword}")
+def inspect_open(engine: str, keyword: str):
+    """实验室检查器入口：解析番号详情页并 302 到检查代理路径，
+    让内嵌浏览器直接进入采集流程实际访问的详情页（javbus 详情页 = /番号，
+    javdb 详情页地址需先搜索获得）。失败回退站点首页。"""
+    if engine not in INSPECT_TARGETS:
+        return JSONResponse({"error": "engine 必须是 javbus 或 javdb"}, status_code=404)
+    kw = keyword.strip()
+    if not kw:
+        return RedirectResponse(f"/api/inspect/{engine}/", status_code=302)
+    if engine == "javbus":
+        return RedirectResponse(f"/api/inspect/javbus/{urllib.parse.quote(kw)}", status_code=302)
+    cookie_str = "; ".join(f"{c.name}={c.value}" for c in _inspect_sessions[engine].cookies)
+    cfg = cfgmod.load_config()
+    proxy_url = (cfg.get("proxy_javdb") or "").strip()
+    url = None
+    try:
+        sc = scraper.JavdbScraper(cookie=cookie_str, proxy=proxy_url, timeout=15)
+        url, _, _ = sc.search(kw)
+    except Exception:
+        url = None
+    if url:
+        path = url if url.startswith("/") else urllib.parse.urlparse(url).path
+        return RedirectResponse(f"/api/inspect/javdb{path}", status_code=302)
+    return RedirectResponse("/api/inspect/javdb/", status_code=302)
 
 
 @app.post("/api/inspect-test/{engine}")

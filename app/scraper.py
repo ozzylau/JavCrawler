@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import struct
+import time
 import xml.etree.ElementTree as ET
 
 import requests
@@ -257,6 +258,14 @@ class JavBusScraper:
         return None
 
     def _get(self, url):
+        try:
+            return self._get_once(url)
+        except requests.RequestException:
+            # 代理链路偶发 SSL 中断（SSLEOFError 等），重试一次
+            time.sleep(0.5)
+            return self._get_once(url)
+
+    def _get_once(self, url):
         if self.proxy:
             r = self.session.get(url, proxies=self._proxies(), timeout=self.timeout)
             if r.status_code == 200:
