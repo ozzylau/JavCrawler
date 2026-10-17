@@ -396,6 +396,10 @@ async def inspect_proxy(engine: str, path: str, request: Request):
             html = content.decode(resp.encoding or "utf-8", "ignore")
             html = _rewrite_absolute_urls(html, engine)
             html = _rewrite_relative_urls(html, engine)
+            # javdb 的 app.js 会校验当前域名（host 含 javdb 且 .com 结尾），
+            # 不匹配就读 body 的 data-domain 属性整页跳到镜像域名（如 javdb580.com，
+            # 已失效返回 404），导致内嵌页面跨域跳出并显示 404。删除该属性即可禁用跳转。
+            html = re.sub(r'\sdata-domain="[^"]*"', "", html, count=1)
             base_tag = f'<base href="/api/inspect/{engine}/">'
             low = html.lower()
             if "<head" in low:
